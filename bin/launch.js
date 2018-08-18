@@ -23,6 +23,12 @@ const PackItMsgs = path.join(PackItForms, 'msgs');
 const PortFileName = path.join('bin', 'port.txt');
 
 switch(process.argv[2]) {
+case 'install':
+    install();
+    break;
+case 'uninstall':
+    uninstall();
+    break;
 case 'serve':
     serve(getEnvironment(process.argv));
     break;
@@ -32,10 +38,84 @@ case 'ready':
 case 'sent':
 case 'unread':
 case 'read':
-    console.log(expandForm(getEnvironment(process.argv)));
+    console.log(getForm(getEnvironment(process.argv)));
     break;
 default:
     console.log(process.argv[1] + ': unknown verb "' + process.argv[2] + '"');
+}
+
+function install() {
+    // This method must be idempotent, in part because Avira antivirus
+    // might execute it repeatedly while scrutinizing the .exe for viruses.
+    var myDirectory = process.cwd();
+    fs.readFile('LOSF.ini', ENCODING, function(err, data) {
+        if (err) throw err;
+        var newData = expandVariables(data, {INSTDIR: myDirectory});
+        if (newData != data) {
+            fs.writeFile('LOSF.ini', newData, {encoding: ENCODING}, function(err) {
+                if (err) throw err; // intolerable
+            });
+        }
+    });
+    // Each of the arguments names a directory that contains Outpost configuration data.
+    // Upsert an INCLUDE into the Launch.local file in each of those directories:
+    var myLaunch = path.resolve(myDirectory, 'LOSF.launch');
+    var target = new RegExp('^INCLUDE\\s+' + enquoteRegex(myLaunch) + '$', 'i');
+    for (var a = 3; a < process.argv.length; a++) {
+        var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
+        if (!fs.existsSync(outpostLaunch)) {
+            fs.writeFile(outpostLaunch, myLaunch, {encoding: ENCODING}, function(err) {
+                if (err) console.log(err);  // tolerable
+            }); 
+        } else {
+            fs.readFile(outpostLaunch, ENCODING, function(err, data) {
+                if (err) {
+                    console.log(err); // tolerable
+                } else {
+                    var lines = data.split(/[\r\n]+/);
+                    for (var i in lines) {
+                        if (target.test(lines[i])) {
+                            // The right INCLUDE is already in outpostLaunch.
+                            // Perhaps this installer was executed repeatedly.
+                            return; // don't modify outpostLaunch
+                        }
+                    }
+                    var myInclude = 'INCLUDE ' + myLaunch + '\r\n';
+                    if (data && !(/[\r\n]+$/.test(data))) {
+                        // The outpostLaunch file doesn't end with a newline.
+                        myInclude = '\r\n' + myInclude;
+                    }
+                    fs.appendFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
+                        if (err) console.log(err);  // tolerable
+                    });
+                }
+            });
+        }
+    }
+}
+
+function uninstall() {
+    var myLaunch = enquoteRegex(path.resolve(process.cwd(), 'LOSF.launch'));
+    for (a = 3; a < process.argv.length; a++) {
+        var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
+        if (fs.existsSync(outpostLaunch)) {
+            fs.readFile(outpostLaunch, ENCODING, function(err, data) {
+                if (err) {
+                    console.log(err);
+                } else {
+                    var myInclude = new RegExp('^INCLUDE\s+' + myLaunch + '[\r\n]+', 'i');
+                    var newData = data.replace(myInclude, "");
+                    myInclude = new RegExp('[\r\n]+INCLUDE\s+' + myLaunch + '[\r\n]+', 'gi');
+                    newData = newData.replace(myInclude, "\r\n");
+                    if (newData != data) {
+                        fs.writeFile(outpostLaunch, newData, {encoding: ENCODING}, function(err) {
+                            if (err) console.log(err);
+                        });
+                    }
+                }
+            });
+        }
+    }
 }
 
 function getEnvironment(args) {
@@ -64,7 +144,7 @@ function getEnvironment(args) {
             }
         }
     }
-    var formFileName = path.resolve('pack-it-forms', environment.filename);
+    var formFileName = path.join(PackItForms, environment.filename);
     if (!fs.existsSync(formFileName)) {
         throw new Error('no form file ' + formFileName);
     }
