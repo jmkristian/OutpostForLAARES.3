@@ -1,7 +1,6 @@
 <script type="text/javascript">
     var formDefaultValues;
 
-    /* Monkey patch the functions to initialize query_object and callprefixes. */
     function monkeyPatch(inObject, oldFunction, newFunction) {
         for (var i in inObject) {
             if (inObject[i] === oldFunction) {
