@@ -11,20 +11,13 @@
 
     monkeyPatch(startup_functions, query_string_to_object, function setQueryObject(next) {
         query_object = {{query_object}};
-        next();
-    });
-
-    monkeyPatch(startup_functions, load_callprefix, function setCallprefixes(next) {
-        callprefixes = {{callprefixes}};
-        if (formDefaultValues) {
-            for (var f = formDefaultValues.length - 1; f >= 0; f--) {
-                init_form_from_fields(formDefaultValues[f], "name");
-            }
+        if (query_object.message) {
+            set_form_data_div(query_object.message);
         }
         if (query_object.submitURL) {
             document.querySelector("#form-data-form").action = query_object.submitURL;
         }
-        if (query_object.pingURL && query_object.mode != "readonly") {
+        if (query_object.pingURL && query_object.mode != 'readonly') {
             // Ping the server periodically, to let it know this form has not been closed.
             // But there's no need to keep the server alive for a read-only message.
             setInterval(function() {
@@ -32,6 +25,16 @@
                 img.src = query_object.pingURL;
                 img = undefined;
             }, 30000); // call ping every 30 seconds
+        }
+        next();
+    });
+
+    monkeyPatch(startup_functions, load_callprefix, function setCallprefixes(next) {
+        callprefixes = {{callprefixes}};
+        if (formDefaultValues) {
+            for (var f = formDefaultValues.length - 1; f >= 0; f--) {
+                init_form_from_fields(formDefaultValues[f], 'name');
+            }
         }
         next();
     });

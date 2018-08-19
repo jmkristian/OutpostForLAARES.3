@@ -229,21 +229,20 @@ function serve() {
         }));
     });
     app.get('/form-:formId', function(req, res, next) {
+        keepAlive(req.params.formId);
         res.set({'Content-Type': 'text/html; charset=' + ENCODING});
         res.send(onGetForm(req.params.formId, res));
-    });
-    app.get('/msgs/:msgno', function(req, res, next) {
-        if (req.params.msgno != environment.msgno) {
-            res.sendStatus(400); // may not read other messages
-        } else {
-            res.set({'Content-Type': 'text/plain; charset=' + ENCODING});
-            res.send(environment.message ? environment.message : '');
-            // The client will quietly ignore an empty message.
-        }
     });
     app.get('/ping-:formId', function(req, res, next) {
         keepAlive(req.params.formId);
         res.sendStatus(NOT_FOUND); // The client ignores this response.
+    });
+    app.get('/msgs/:msgno', function(req, res, next) {
+        // The client may not get the message this way,
+        // since there's no formId in the request.
+        res.sendStatus(NOT_FOUND);
+        // Instead, the message is stored in query_object.message,
+        // which is subsequently passed to set_form_data_div.
     });
     app.get(/^\/.*/, express.static(PackItForms));
     const server = app.listen(0);
@@ -337,7 +336,6 @@ function onGetForm(formId, res) {
     if (!form) {
         respond(res, NOT_FOUND, 'form ' + formId + ' is not open');
     } else {
-        keepAlive(formId);
         var environment = getEnvironment(form.args);
         environment.pingURL = '/ping-' + formId;
         environment.submitURL = '/submit-' + formId;
