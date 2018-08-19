@@ -222,7 +222,7 @@ function serve() {
             var formId = '' + nextFormId++;
             openForms[formId] = {
                 quietSeconds: 0,
-                argv: JSON.parse(data)
+                args: JSON.parse(data)
             };
             console.log('form ' + formId + ' opened ' + data);
             res.send(formId);
@@ -240,6 +240,10 @@ function serve() {
             res.send(environment.message ? environment.message : '');
             // The client will quietly ignore an empty message.
         }
+    });
+    app.get('/ping-:formId', function(req, res, next) {
+        keepAlive(req.params.formId);
+        res.sendStatus(NOT_FOUND); // The client ignores this response.
     });
     app.get(/^\/.*/, express.static(PackItForms));
     const server = app.listen(0);
@@ -290,8 +294,8 @@ function closeForm(formId) {
 }
 
 function getEnvironment(args) {
-    var environment = {message_status: args[2]};
-    for (var i = 3; i + 1 < args.length; i = i + 2) {
+    var environment = {message_status: args[0]};
+    for (var i = 1; i + 1 < args.length; i = i + 2) {
         environment[args[i]] = args[i+1];
     }
     if (environment.msgno == '-1') { // a sentinel value
@@ -302,7 +306,7 @@ function getEnvironment(args) {
         environment.message = fs.readFileSync(msgFileName, ENCODING);
         if (!environment.msgno && isMyDraftMessage(environment.message_status)) {
             // The MsgNo field is set by the sender. For a draft message, the sender is me.
-            // So pass it to the form as environment.message, shown as "My Message Number".
+            // So pass it to the form as environment.msgno, shown as "My Message Number".
             var found = /[\r\n]\s*MsgNo:\s*\[([^\]]*)\]/.exec(environment.message);
             if (found) {
                 environment.msgno = found[1];
@@ -334,7 +338,7 @@ function onGetForm(formId, res) {
         respond(res, NOT_FOUND, 'form ' + formId + ' is not open');
     } else {
         keepAlive(formId);
-        var environment = getEnvironment(form.argv);
+        var environment = getEnvironment(form.args);
         environment.pingURL = '/ping-' + formId;
         environment.submitURL = '/submit-' + formId;
         console.log('form ' + formId + ' viewed');
