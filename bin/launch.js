@@ -19,9 +19,12 @@ const fs = require('fs');
 const http = require('http');
 const morgan = require('morgan');
 const path = require('path');
+const querystring = require('querystring');
+const Transform = require('stream').Transform;
 
 const ENCODING = 'utf-8';
 const NOT_FOUND = 404;
+const OpdFAIL = path.join('bin', 'OpdFAIL');
 const PackItForms = 'pack-it-forms';
 const PackItMsgs = path.join(PackItForms, 'msgs');
 const PortFileName = path.join('bin', 'port.txt');
@@ -216,15 +219,15 @@ function serve() {
     console.log('It will run as long as you have forms open, and stop a few minutes later.');
     const app = express();
     app.set('etag', false); // convenient for debugging
-    app.use(morgan('dev'));
+    app.use(morgan('tiny'));
     app.post('/open', function(req, res, next) {
-        req.pipe(concat_stream(function(data) {
+        req.pipe(concat_stream(function(buffer) {
             var formId = '' + nextFormId++;
             openForms[formId] = {
                 quietSeconds: 0,
-                args: JSON.parse(data)
+                args: JSON.parse(buffer.toString(ENCODING))
             };
-            console.log('form ' + formId + ' opened ' + data);
+            console.log('form ' + formId + ' opened ' + buffer);
             res.send(formId);
         }));
     });
@@ -237,6 +240,12 @@ function serve() {
         keepAlive(req.params.formId);
         res.sendStatus(NOT_FOUND); // The client ignores this response.
     });
+    app.post('/submit-:formId', function(req, res, next) {
+        res.set({'Content-Type': 'text/html; charset=' + ENCODING});
+        req.pipe(concat_stream(function(buffer) {
+            onSubmit(req.params.formId, buffer.toString('binary'), res);
+        }));
+    });
     app.get('/msgs/:msgno', function(req, res, next) {
         // The client may not get the message this way,
         // since there's no formId in the request.
@@ -248,6 +257,7 @@ function serve() {
     const server = app.listen(0);
     const address = server.address();
     fs.writeFileSync(PortFileName, address.port + '', {encoding: ENCODING}); // advertise my port
+    process.stdout.write = writeTo(path.resolve('bin', 'logs', 'server_' + address.port + '.log'));
     console.log('Listening for HTTP requests on port ' + address.port + '...');
     const checkSilent = setInterval(function() {
         // Scan openForms and close any that have been quiet too long.
@@ -269,7 +279,7 @@ function serve() {
             clearInterval(checkSilent);
             server.close();
             // Give someone a chance to read that last message before the window disappears:
-            // setTimeout(process.exit, 2000, 0);
+            setTimeout(process.exit, 2000, 0);
         }
     }, 5000);
 }
@@ -279,6 +289,27 @@ function keepAlive(formId) {
     if (form) {
         form.quietSeconds = 0;
     }
+}
+
+function writeTo(fileName) {
+    if (!fs.existsSync(path.dirname(fileName))) {
+        fs.mkdirSync(path.dirname(fileName));
+    }
+    const fileStream = fs.createWriteStream(fileName, {autoClose: true});
+    const windowsEOL = new Transform({
+        // Transform line endings from Unix style to Windows style.
+        transform: function(chunk, encoding, callback) {
+            if (encoding == 'buffer') {
+                callback(null, chunk.toString('binary').replace(/([^\r])\n/g, '$1\r\n'));
+            } else {
+                callback(null, chunk); // no change
+            }
+        }
+    });
+    windowsEOL.pipe(fileStream);
+    console.log('Detailed information about its activity can be seen in');
+    console.log(fileName);
+    return windowsEOL.write.bind(windowsEOL);
 }
 
 function closeForm(formId) {
@@ -301,7 +332,7 @@ function getEnvironment(args) {
         delete environment.msgno;
     }
     if (environment.MSG_FILENAME) {
-        var msgFileName = path.join(PackItMsgs, environment.MSG_FILENAME);
+        var msgFileName = path.resolve(PackItMsgs, environment.MSG_FILENAME);
         environment.message = fs.readFileSync(msgFileName, ENCODING);
         if (!environment.msgno && isMyDraftMessage(environment.message_status)) {
             // The MsgNo field is set by the sender. For a draft message, the sender is me.
@@ -321,20 +352,16 @@ function getEnvironment(args) {
     return environment;
 }
 
-function respond(res, code, message) {
-    if (message) {
-        console.log(message);
-        res.status(code).send(message);
-    } else {
-        res.sendStatus(code);
-    }
+function isMyDraftMessage(status) {
+    return status == 'new' || status == 'draft' || status == 'ready';
 }
 
 /** Handle an HTTP GET /form-id request. */
 function onGetForm(formId, res) {
     var form = openForms[formId];
     if (!form) {
-        respond(res, NOT_FOUND, 'form ' + formId + ' is not open');
+        console.log('form ' + formId + ' is not open');
+        res.sendStatus(NOT_FOUND);
     } else {
         var environment = getEnvironment(form.args);
         environment.pingURL = '/ping-' + formId;
@@ -412,6 +439,77 @@ function expandDataInclude(data, query_objectJSON) {
     });
 }
 
+function onSubmit(formId, data, res) {
+    function showError(err) {
+        res.send('<HTML><body>A problem occurred:<pre>\r\n'
+                 + encodeHTML((err && err.stack) ? err.stack : err)
+                 + '</pre></body></HTML>');
+    }
+    try {
+        var q = querystring.parse(data);
+        var message = q.formtext;
+        var found = /[\r\n]*![^!]*!\s*([^\r\n]*)[\r\n]/.exec(message);
+        var subject = found ? found[1] : '';
+        var msgFileName = path.resolve(PackItMsgs,
+                                       (subject || '_toOutpost').replace(/[\/\\]/g, '~') + '.txt');
+        message = message.replace(/([\r\n]*)![^!]+!\s*/, '$1# ');
+        message = message.replace(/[\r\n]*#EOF/, '\r\n!/ADDON!');
+        var filename = getEnvironment(openForms[formId].args).filename;
+        if (filename) {
+            message = message.replace(/[\r\n]*(#\s*FORMFILENAME:\s*)[^\r\n]*[\r\n]*/,
+                                      '\r\n$1' + filename.replace('$', '\\$') + '\r\n');
+        }
+        fs.writeFile(msgFileName, message, {encoding: ENCODING}, function(err) {
+            if (err) {
+                showError(err);
+            } else {
+                try {
+                    fs.unlinkSync(OpdFAIL);
+                } catch(e) {
+                    // ignored
+                }
+                console.log('form ' + formId + ' submitting');
+                child_process.execFile(
+                    path.join('bin', 'Aoclient.exe'),
+                    ['-a', 'LOSF', '-f', msgFileName, '-s', subject],
+                    function(err, stdout, stderr) {
+                        try {
+                            if (err) {
+                                throw err;
+                            } else if (fs.existsSync(OpdFAIL)) {
+                                // This is described in the Outpost Add-on Implementation Guide version 1.2,
+                                // but Aoclient.exe doesn't appear to implement it.
+                                // Happily, it does pop up a window to explain what went wrong.
+                                throw (OpdFAIL + ': ' + fs.readFileSync(OpdFAIL, ENCODING));
+                            } else {
+                                res.send(submittedMessage(stdout, stderr));
+                                console.log('form ' + formId + ' submitted');
+                                fs.unlinkSync(msgFileName);
+                                // Don't closeForm, in case the operator goes back and submits it again.
+                            }
+                        } catch(err) {
+                            showError(err);
+                        }
+                    });
+            }
+        });
+    } catch(err) {
+        showError(err);
+    }
+}
+
+function submittedMessage(stdout, stderr) {
+    return '<HTML><body>'
+        + 'OK, your message has been submitted to Outpost. You can close this page.'
+        + '<pre>'
+        + encodeHTML((stdout ? stdout.toString(ENCODING) : '') +
+                     (stderr ? stderr.toString(ENCODING) : ''))
+        + '</pre>'
+    // Sadly, this doesn't work on modern browsers:
+        + '<script type="text/javascript">setTimeout(function(){window.open("","_self").close();},5000);</script>'
+        + '</body></HTML>';
+}
+
 function expandVariables(data, values) {
     for (var v in values) {
         data = data.replace(new RegExp(enquoteRegex('{{' + v + '}}'), 'g'), values[v]);
@@ -421,10 +519,10 @@ function expandVariables(data, values) {
 
 function encodeHTML(text) {
     // Crude but adequate:
-    return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return ('' + text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function enquoteRegex(text) {
     // Crude but adequate:
-    return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+    return ('' + text).replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
 }
