@@ -12,12 +12,16 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 */
+const child_process = require('child_process');
+const concat_stream = require('concat-stream');
 const express = require('express');
 const fs = require('fs');
+const http = require('http');
 const morgan = require('morgan');
 const path = require('path');
 
 const ENCODING = 'utf-8';
+const NOT_FOUND = 404;
 const PackItForms = 'pack-it-forms';
 const PackItMsgs = path.join(PackItForms, 'msgs');
 const PortFileName = path.join('bin', 'port.txt');
@@ -30,7 +34,7 @@ case 'uninstall':
     uninstall();
     break;
 case 'serve':
-    serve(getEnvironment(process.argv));
+    serve();
     break;
 case 'new':
 case 'draft':
@@ -38,7 +42,7 @@ case 'ready':
 case 'sent':
 case 'unread':
 case 'read':
-    console.log(getForm(getEnvironment(process.argv)));
+    openMessage();
     break;
 default:
     console.log(process.argv[1] + ': unknown verb "' + process.argv[2] + '"');
@@ -118,6 +122,173 @@ function uninstall() {
     }
 }
 
+function openMessage() {
+    var argv = [];
+    for (var i = 2; i < process.argv.length; i++) {
+        argv.push(process.argv[i]);
+    }
+    if (fs.existsSync(PortFileName)) {
+        openForm(0, argv);
+    } else {
+        // There's definitely no server running. Start one now:
+        startServer(function() {setTimeout(openForm, 500, 0, argv);});
+    }
+}
+
+function openForm(retry, argv) {
+    try {
+        var options = {host: '127.0.0.1',
+                       port: parseInt(fs.readFileSync(PortFileName, ENCODING)),
+                       method: 'POST',
+                       path: '/open',
+                       headers: {'Content-Type': 'text/json'}};
+        var req = http.request(options, function(res) {
+            res.setEncoding(ENCODING);
+            var data = '';
+            res.on('data', function(chunk) {
+                data += chunk;
+            });
+            res.on('end', function() {
+                startBrowserAndExit(options.port, '/form-' + data);
+            });
+        });
+        req.on('error', function(err) {
+            openFormFailed(err, retry, argv);
+        });
+        req.write(JSON.stringify(argv));
+        req.end();
+    } catch(err) {
+        openFormFailed(err, retry, argv);
+    }
+}
+
+function openFormFailed(err, retry, argv) {
+    console.log(err);
+    if (retry >= 4) {
+        console.error(retry + ' attempts failed ' + JSON.stringify(argv));
+    } else {
+        if (retry == 1) {
+            startServer(); // in case the old server died or stalled
+        }
+        retry++;
+        setTimeout(openForm, retry * 1000, retry, argv);
+    }
+}
+
+function startServer(andThen) {
+    const command = 'start "Outpost for LAARES" /MIN bin\\launch.exe serve';
+    console.log(command);
+    child_process.exec(
+        command,
+        {windowsHide: true},
+        function(err, stdout, stderr) {
+            if (err) {
+                console.error(err);
+                console.error(stdout.toString(ENCODING) + stderr.toString(ENCODING));
+            }
+            if (andThen) {
+                andThen();
+            }
+        });
+}
+
+function startBrowserAndExit(port, path) {
+    const command = 'start "Open a Form" /B http://127.0.0.1:' + port + path;
+    console.log(command);
+    child_process.exec(
+        command,
+        function(err, stdout, stderr) {
+            if (err) {
+                console.error(err);
+            }
+            console.log(stdout.toString(ENCODING) + stderr.toString(ENCODING));
+            process.exit(0);
+        });
+}
+
+var openForms = {'0': {quietSeconds: 0}}; // all the forms that are currently open
+// Form 0 is a hack to make sure the server doesn't shut down immediately after starting.
+var nextFormId = 1; // Forms are assigned sequence numbers when they're opened.
+
+function serve() {
+    console.log("Let this program run in the background. There's no need to interact with it.");
+    console.log('It works with your browser to show forms and submit messages to Outpost.');
+    console.log('It will run as long as you have forms open, and stop a few minutes later.');
+    const app = express();
+    app.set('etag', false); // convenient for debugging
+    app.use(morgan('dev'));
+    app.post('/open', function(req, res, next) {
+        req.pipe(concat_stream(function(data) {
+            var formId = '' + nextFormId++;
+            openForms[formId] = {
+                quietSeconds: 0,
+                argv: JSON.parse(data)
+            };
+            console.log('form ' + formId + ' opened ' + data);
+            res.send(formId);
+        }));
+    });
+    app.get('/form-:formId', function(req, res, next) {
+        res.set({'Content-Type': 'text/html; charset=' + ENCODING});
+        res.send(onGetForm(req.params.formId, res));
+    });
+    app.get('/msgs/:msgno', function(req, res, next) {
+        if (req.params.msgno != environment.msgno) {
+            res.sendStatus(400); // may not read other messages
+        } else {
+            res.set({'Content-Type': 'text/plain; charset=' + ENCODING});
+            res.send(environment.message ? environment.message : '');
+            // The client will quietly ignore an empty message.
+        }
+    });
+    app.get(/^\/.*/, express.static(PackItForms));
+    const server = app.listen(0);
+    const address = server.address();
+    fs.writeFileSync(PortFileName, address.port + '', {encoding: ENCODING}); // advertise my port
+    console.log('Listening for HTTP requests on port ' + address.port + '...');
+    const checkSilent = setInterval(function() {
+        // Scan openForms and close any that have been quiet too long.
+        var anyOpen = false;
+        for (formId in openForms) {
+            var form = openForms[formId];
+            if (form) {
+                form.quietSeconds += 5;
+                // The client is expected to GET /ping-formId every 30 seconds.
+                if (form.quietSeconds >= 120) {
+                    closeForm(formId);
+                } else {
+                    anyOpen = true;
+                }
+            }
+        }
+        if (!anyOpen) {
+            console.log("forms are all closed");
+            clearInterval(checkSilent);
+            server.close();
+            // Give someone a chance to read that last message before the window disappears:
+            // setTimeout(process.exit, 2000, 0);
+        }
+    }, 5000);
+}
+
+function keepAlive(formId) {
+    form = openForms[formId];
+    if (form) {
+        form.quietSeconds = 0;
+    }
+}
+
+function closeForm(formId) {
+    var form = openForms[formId];
+    if (form) {
+        console.log('form ' + formId + ' closed');
+        if (form.msgFileName) {
+            fs.unlinkSync(form.msgFileName);
+        }
+    }
+    delete openForms[formId];
+}
+
 function getEnvironment(args) {
     var environment = {message_status: args[2]};
     for (var i = 3; i + 1 < args.length; i = i + 2) {
@@ -144,39 +315,35 @@ function getEnvironment(args) {
             }
         }
     }
-    var formFileName = path.join(PackItForms, environment.filename);
-    if (!fs.existsSync(formFileName)) {
-        throw new Error('no form file ' + formFileName);
-    }
     return environment;
 }
 
-function serve(environment) {
-    const app = express();
-    app.set('etag', false); // convenient for debugging
-    app.use(morgan('dev'));
-    app.get('/form', function(req, res, next) {
-        res.set({'Content-Type': 'text/html; charset=' + ENCODING});
+function respond(res, code, message) {
+    if (message) {
+        console.log(message);
+        res.status(code).send(message);
+    } else {
+        res.sendStatus(code);
+    }
+}
+
+/** Handle an HTTP GET /form-id request. */
+function onGetForm(formId, res) {
+    var form = openForms[formId];
+    if (!form) {
+        respond(res, NOT_FOUND, 'form ' + formId + ' is not open');
+    } else {
+        keepAlive(formId);
+        var environment = getEnvironment(form.argv);
+        environment.pingURL = '/ping-' + formId;
+        environment.submitURL = '/submit-' + formId;
+        console.log('form ' + formId + ' viewed');
+        console.log(environment);
         res.send(getForm(environment));
-    });
-    app.get('/msgs/:file', function(req, res, next) {
-        if (req.params.file != environment.msgno) {
-            res.sendStatus(400); // may not read other messages
-        } else {
-            res.set({'Content-Type': 'text/plain; charset=' + ENCODING});
-            res.send(environment.message ? environment.message : '');
-            // The client will quietly ignore an empty message.
-        }
-    });
-    app.get(/^\/.*/, express.static(PackItForms));
-    const server = app.listen(3000); // TODO: port 0, to get a temporary port
-    const address = server.address();
-    fs.writeFileSync(PortFileName, address.port + '', {encoding: ENCODING}); // advertise my port
-    console.log('Listening for HTTP requests on port ' + address.port + '...');
+    }
 }
 
 function getForm(environment) {
-    console.log(environment);
     if (!environment.filename) {
         throw new Error('form file name is ' + environment.filename);
     }
