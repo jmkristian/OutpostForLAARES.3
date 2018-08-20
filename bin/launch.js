@@ -248,10 +248,10 @@ function serve() {
     });
     app.get('/msgs/:msgno', function(req, res, next) {
         // The client may not get the message this way,
-        // since there's no formId in the request.
-        res.sendStatus(NOT_FOUND);
-        // Instead, the message is stored in query_object.message,
-        // which is subsequently passed to set_form_data_div.
+        // since the server doesn't know what the formId is.
+        res.statusCode = NOT_FOUND;
+        res.end(); // with no body
+        // The message is passed to set_form_data_div instead.
     });
     app.get(/^\/.*/, express.static(PackItForms));
     const server = app.listen(0);
@@ -278,7 +278,7 @@ function serve() {
             console.log("forms are all closed");
             clearInterval(checkSilent);
             server.close();
-            // Give someone a chance to read that last message before the window disappears:
+            // Give someone a chance to read the log before the window disappears:
             setTimeout(process.exit, 2000, 0);
         }
     }, 5000);
@@ -331,25 +331,30 @@ function getEnvironment(args) {
     if (environment.msgno == '-1') { // a sentinel value
         delete environment.msgno;
     }
+    return environment;
+}
+
+function getMessage(environment) {
+    var message = null;
     if (environment.MSG_FILENAME) {
         var msgFileName = path.resolve(PackItMsgs, environment.MSG_FILENAME);
-        environment.message = fs.readFileSync(msgFileName, ENCODING);
+        message = fs.readFileSync(msgFileName, ENCODING);
         if (!environment.msgno && isMyDraftMessage(environment.message_status)) {
             // The MsgNo field is set by the sender. For a draft message, the sender is me.
             // So pass it to the form as environment.msgno, shown as "My Message Number".
-            var found = /[\r\n]\s*MsgNo:\s*\[([^\]]*)\]/.exec(environment.message);
+            var found = /[\r\n]\s*MsgNo:\s*\[([^\]]*)\]/.exec(message);
             if (found) {
                 environment.msgno = found[1];
             }
         }
         if (!environment.filename) {
-            found = /[\r\n]# *FORMFILENAME:([^\r\n]*)[\r\n]/.exec(environment.message);
+            found = /[\r\n]#\s*FORMFILENAME:([^\r\n]*)[\r\n]/.exec(message);
             if (found) {
                 environment.filename = found[1].trim();
             }
         }
     }
-    return environment;
+    return message;
 }
 
 function isMyDraftMessage(status) {
@@ -363,16 +368,18 @@ function onGetForm(formId, res) {
         console.log('form ' + formId + ' is not open');
         res.sendStatus(NOT_FOUND);
     } else {
-        var environment = getEnvironment(form.args);
+        const environment = getEnvironment(form.args);
         environment.pingURL = '/ping-' + formId;
         environment.submitURL = '/submit-' + formId;
         console.log('form ' + formId + ' viewed');
         console.log(environment);
-        res.send(getForm(environment));
+        form.environment = environment;
+        form.message = getMessage(environment);
+        res.send(getForm(form.environment, form.message));
     }
 }
 
-function getForm(environment) {
+function getForm(environment, message) {
     if (!environment.filename) {
         throw new Error('form file name is ' + environment.filename);
     }
@@ -381,7 +388,7 @@ function getForm(environment) {
         throw new Error('no form file ' + formFileName);
     }
     var form = fs.readFileSync(path.join(PackItForms, environment.filename), ENCODING);
-    form = expandDataIncludes(form, JSON.stringify(environment));
+    form = expandDataIncludes(form, environment, message);
     return form;
 }
 
@@ -393,10 +400,10 @@ function getForm(environment) {
     }
   </div>
 */
-function expandDataIncludes(data, environmentJSON) {
+function expandDataIncludes(data, environment, message) {
     var oldData = data;
     while(true) {
-        var newData = expandDataInclude(oldData, environmentJSON);
+        var newData = expandDataInclude(oldData, environment, message);
         if (newData == oldData) {
             return oldData;
         }
@@ -404,7 +411,7 @@ function expandDataIncludes(data, environmentJSON) {
     }
 }
 
-function expandDataInclude(data, query_objectJSON) {
+function expandDataInclude(data, environment, message) {
     const target = /<\s*div\s+data-include-html\s*=\s*"[^"]*"\s*>[^<]*<\/\s*div\s*>/gi;
     return data.replace(target, function(found) {
         var matches = found.match(/"([^"]*)"\s*>([^<]*)/);
@@ -418,13 +425,9 @@ function expandDataInclude(data, query_objectJSON) {
         result = result.replace(/(.*)<\/\s*div\s*>\s*$/i, '$1');
         if (name == 'submit-buttons') {
             // Add some additional stuff:
-            var callprefixesJSON =
-                fs.readFileSync(path.join(PackItForms, 'cfgs', 'msgno-prefixes.json'), ENCODING)
-                  .trim();
             result += expandVariables(
                 fs.readFileSync(path.join('bin', 'after-submit-buttons.html'), ENCODING),
-                {query_object: query_objectJSON,
-                 callprefixes: callprefixesJSON});
+                {message: JSON.stringify(message), queryDefaults: JSON.stringify(environment)});
         }
         if (init) {
             result += `<script type="text/javascript">
@@ -433,7 +436,8 @@ function expandDataInclude(data, query_objectJSON) {
       formDefaultValues = [];
   }
   formDefaultValues.push(${init});
-</script>`;
+</script>
+`;
         }
         return result;
     });

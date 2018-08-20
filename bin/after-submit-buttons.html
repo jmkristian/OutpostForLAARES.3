@@ -1,41 +1,41 @@
 <script type="text/javascript">
-    var formDefaultValues;
-
-    function monkeyPatch(inObject, oldFunction, newFunction) {
-        for (var i in inObject) {
-            if (inObject[i] === oldFunction) {
-                inObject[i] = newFunction;
-            }
+    var formDefaultValues; // Initial values for form inputs.
+    // Monkey patch load_callprefix:
+    for (var i = startup_functions.length - 1; i >= 0; i--) {
+        if (startup_functions[i] === load_callprefix) {
+            startup_functions[i] = function(next) {
+                load_callprefix(function() {
+                    const message = {{message}};
+                    if (message) {
+                        set_form_data_div(message);
+                    }
+                    const queryDefaults = {{queryDefaults}};
+                    for (var i in queryDefaults) {
+                        if (typeof query_object[i] == 'undefined') {
+                            query_object[i] = queryDefaults[i];
+                        }
+                    }
+                    if (query_object.submitURL) {
+                        document.querySelector('#form-data-form').action = query_object.submitURL;
+                    }
+                    if (query_object.pingURL && query_object.mode != 'readonly') {
+                        // Ping the server periodically, to keep it alive while the form is open.
+                        // But don't keep the server alive for a read-only message.
+                        setInterval(function() {
+                            var img = new Image();
+                            img.src = query_object.pingURL;
+                            img = undefined;
+                        }, 30000); // call ping every 30 seconds
+                    }
+                    if (formDefaultValues) {
+                        for (var f = formDefaultValues.length - 1; f >= 0; f--) {
+                            init_form_from_fields(formDefaultValues[f], 'name');
+                        }
+                    }
+                    next();
+                });
+            };
+            break;
         }
     }
-
-    monkeyPatch(startup_functions, query_string_to_object, function setQueryObject(next) {
-        query_object = {{query_object}};
-        if (query_object.message) {
-            set_form_data_div(query_object.message);
-        }
-        if (query_object.submitURL) {
-            document.querySelector("#form-data-form").action = query_object.submitURL;
-        }
-        if (query_object.pingURL && query_object.mode != 'readonly') {
-            // Ping the server periodically, to let it know this form has not been closed.
-            // But there's no need to keep the server alive for a read-only message.
-            setInterval(function() {
-                var img = new Image();
-                img.src = query_object.pingURL;
-                img = undefined;
-            }, 30000); // call ping every 30 seconds
-        }
-        next();
-    });
-
-    monkeyPatch(startup_functions, load_callprefix, function setCallprefixes(next) {
-        callprefixes = {{callprefixes}};
-        if (formDefaultValues) {
-            for (var f = formDefaultValues.length - 1; f >= 0; f--) {
-                init_form_from_fields(formDefaultValues[f], 'name');
-            }
-        }
-        next();
-    });
 </script>
