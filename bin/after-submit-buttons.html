@@ -12,7 +12,7 @@
                         }
                         const queryDefaults = {{queryDefaults}};
                         for (var i in queryDefaults) {
-                            if (query_object[i] === undefined) {
+                            if (query_object[i] == null) {
                                 query_object[i] = queryDefaults[i];
                             }
                         }
@@ -21,7 +21,7 @@
                         }
                         if (query_object.pingURL && query_object.mode != 'readonly') {
                             // Ping the server periodically, to keep it alive while the form is open.
-                            // But don't keep the server alive for a read-only message.
+                            // But not for a read-only message.
                             setInterval(function() {
                                 var img = new Image();
                                 img.src = query_object.pingURL;
