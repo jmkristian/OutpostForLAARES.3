@@ -44,6 +44,7 @@ case 'uninstall':
 case 'serve':
     serve();
     break;
+case 'dry-run':
 case 'new':
 case 'draft':
 case 'ready':
@@ -132,19 +133,19 @@ console.log("newData " + newData);
 }
 
 function openMessage() {
-    var argv = [];
+    var args = [];
     for (var i = 2; i < process.argv.length; i++) {
-        argv.push(process.argv[i]);
+        args.push(process.argv[i]);
     }
     if (fs.existsSync(PortFileName)) {
-        openForm(0, argv);
+        openForm(0, args);
     } else {
         // There's definitely no server running. Start one now:
-        startServer(function() {setTimeout(openForm, 500, 0, argv);});
+        startServer(function() {setTimeout(openForm, 500, 0, args);});
     }
 }
 
-function openForm(retry, argv) {
+function openForm(retry, args) {
     try {
         var options = {host: '127.0.0.1',
                        port: parseInt(fs.readFileSync(PortFileName, ENCODING)),
@@ -154,32 +155,37 @@ function openForm(retry, argv) {
         var req = http.request(options, function(res) {
             var data = '';
             res.on('data', function(chunk) {
-                data += chunk;
+                data += chunk.toString(CHARSET);
             });
             res.on('end', function() {
-                startBrowserAndExit(options.port, '/form-' + data);
+                data = data.trim();
+                if (data) {
+                    startBrowserAndExit(options.port, '/form-' + data);
+                } else {
+                    process.exit(0); // This was just a dry run.
+                }
             });
         });
         req.on('error', function(err) {
-            openFormFailed(err, retry, argv);
+            openFormFailed(err, retry, args);
         });
-        req.end(JSON.stringify(argv), CHARSET);
+        req.end(JSON.stringify(args), CHARSET);
     } catch(err) {
-        openFormFailed(err, retry, argv);
+        openFormFailed(err, retry, args);
     }
 }
 
-function openFormFailed(err, retry, argv) {
+function openFormFailed(err, retry, args) {
     console.log(err);
     if (retry >= 4) {
-        console.error(retry + ' attempts failed ' + JSON.stringify(argv));
+        console.error(retry + ' attempts failed ' + JSON.stringify(args));
         setTimeout(console.log, 5000, 'Goodbye.');
     } else {
         if (retry == 0 || retry == 3) {
             startServer(); // in case the old server died or stalled
         }
         retry++;
-        setTimeout(openForm, retry * 1000, retry, argv);
+        setTimeout(openForm, retry * 1000, retry, args);
     }
 }
 
@@ -227,10 +233,16 @@ function serve() {
     app.use(morgan('tiny'));
     app.use(bodyParser.json({type: JSON_TYPE}));
     app.post('/open', function(req, res, next) {
-        const formId = '' + nextFormId++;
-        onOpen(formId, req.body);
-        res.set({'Content-Type': 'text/plain; charset=' + CHARSET});
-        res.end(formId, CHARSET);
+console.log('/open ' + JSON.stringify(req.body));
+        if (req.body && req.body[0] == 'dry-run') {
+            res.end(); // with no body
+            // This tells the client not to open a browser page.
+        } else {
+            const formId = '' + nextFormId++;
+            onOpen(formId, req.body);
+            res.set({'Content-Type': 'text/plain; charset=' + CHARSET});
+            res.end(formId, CHARSET);
+        }
     });
     app.get('/form-:formId', function(req, res, next) {
         keepAlive(req.params.formId);

@@ -136,12 +136,17 @@ Section "Install"
   WriteRegDWORD HKLM "${REG_SUBKEY}" NoRepair 1
   WriteRegDWORD HKLM "${REG_SUBKEY}" EstimatedSize 15000
 
-  ExecWait "bin\launch.exe install$OUTPOST_DATA" $0
-  ${If} $0 != 0
-    Abort "bin\launch.exe install: exit status $0"
+  ExecShellWait open "bin\launch.exe" "install$OUTPOST_DATA" SW_SHOWMINIMIZED
+  ${If} ${Errors}
+    Abort "bin\launch.exe install failed"
+  ${EndIf}
+  # Execute a dry run, to encourage antivirus/firewall software to accept the new code.
+  ExecShellWait open "bin\launch.exe" "dry-run" SW_SHOWMINIMIZED
+  ${If} ${Errors}
+    Abort "bin\launch.exe install$OUTPOST_DATA failed"
   ${EndIf}
 SectionEnd
- 
+
 Section "Uninstall"
   SetOutPath "$INSTDIR"
 
