@@ -58,7 +58,7 @@ default:
 function install() {
     // This method must be idempotent, in part because Avira antivirus
     // might execute it repeatedly while scrutinizing the .exe for viruses.
-    var myDirectory = process.cwd();
+    const myDirectory = process.cwd();
     fs.readFile('Los_Altos.ini', ENCODING, function(err, data) {
         if (err) throw err;
         var newData = expandVariables(data, {INSTDIR: myDirectory});
@@ -70,12 +70,13 @@ function install() {
     });
     // Each of the arguments names a directory that contains Outpost configuration data.
     // Upsert an INCLUDE into the Launch.local file in each of those directories:
-    var myLaunch = path.resolve(myDirectory, 'Los_Altos.launch');
-    var target = new RegExp('^INCLUDE\\s+' + enquoteRegex(myLaunch) + '$', 'i');
+    const myLaunch = path.resolve(myDirectory, 'Los_Altos.launch');
+    const myInclude = 'INCLUDE ' + myLaunch + '\r\n';
+    const target = new RegExp('^INCLUDE\\s+' + enquoteRegex(myLaunch) + '$', 'i');
     for (var a = 3; a < process.argv.length; a++) {
         var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
         if (!fs.existsSync(outpostLaunch)) {
-            fs.writeFile(outpostLaunch, myLaunch, {encoding: ENCODING}, function(err) {
+            fs.writeFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
                 if (err) console.log(err);  // tolerable
             }); 
         } else {
@@ -91,7 +92,6 @@ function install() {
                             return; // don't modify outpostLaunch
                         }
                     }
-                    var myInclude = 'INCLUDE ' + myLaunch + '\r\n';
                     if (data && !(/[\r\n]+$/.test(data))) {
                         // The outpostLaunch file doesn't end with a newline.
                         myInclude = '\r\n' + myInclude;
@@ -106,18 +106,19 @@ function install() {
 }
 
 function uninstall() {
-    var myLaunch = enquoteRegex(path.resolve(process.cwd(), 'Los_Altos.launch'));
+    const myLaunch = enquoteRegex(path.resolve(process.cwd(), 'Los_Altos.launch'));
+    const myInclude1 = new RegExp('^INCLUDE\\s+' + myLaunch + '[\r\n]*', 'i');
+    const myInclude = new RegExp('[\r\n]+INCLUDE\\s+' + myLaunch + '[\r\n]+', 'gi');
     for (a = 3; a < process.argv.length; a++) {
         var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
         if (fs.existsSync(outpostLaunch)) {
-            fs.readFile(outpostLaunch, ENCODING, function(err, data) {
+           fs.readFile(outpostLaunch, ENCODING, function(err, data) {
                 if (err) {
                     console.log(err);
                 } else {
-                    var myInclude = new RegExp('^INCLUDE\s+' + myLaunch + '[\r\n]+', 'i');
-                    var newData = data.replace(myInclude, "");
-                    myInclude = new RegExp('[\r\n]+INCLUDE\s+' + myLaunch + '[\r\n]+', 'gi');
-                    newData = newData.replace(myInclude, "\r\n");
+console.log("   data " + data);
+                    var newData = data.replace(myInclude1, '').replace(myInclude, "\r\n");
+console.log("newData " + newData);
                     if (newData != data) {
                         fs.writeFile(outpostLaunch, newData, {encoding: ENCODING}, function(err) {
                             if (err) console.log(err);
