@@ -6,11 +6,11 @@
             startup_functions[i] = function(next) {
                 load_callprefix(function() {
                     try {
-                        const message = {{message}};
+                        var message = {{message}};
                         if (message) {
                             set_form_data_div(message);
                         }
-                        const queryDefaults = {{queryDefaults}};
+                        var queryDefaults = {{queryDefaults}};
                         for (var i in queryDefaults) {
                             if (query_object[i] == null) {
                                 query_object[i] = queryDefaults[i];
@@ -33,6 +33,18 @@
                                 init_form_from_fields(formDefaultValues[f], 'name');
                             }
                         }
+                        // Change the message header from PACF format to ADDON format:
+                        var messageHeader = document.querySelector("#message-header");
+                        var header = messageHeader.textContent;
+                        // The subject comes after !PACF! in the first line:
+                        var found = /^\s*![^!\r\n]*!\s*([^\r\n]*)/.exec(header);
+                        // Remove that first line:
+                        header = header.replace(/^\s*![^!\r\n]*![^\r\n]*[\r\n]*/, '');
+                        if (found) {
+                            // Add the subject in a comment:
+                            header = header.replace(/\s*$/, '\r\n# SUBJECT: ' + found[1]);
+                        }
+                        messageHeader.textContent = header;
                     } catch(err) {
                         // TODO: log the error
                     }
