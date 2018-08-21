@@ -156,7 +156,7 @@ Section "Uninstall"
 
   # Remove our line from Outpost configuration files
   Call un.FindOutposts
-  ExecWait "bin\launch.exe uninstall$OUTPOST_DATA" $0
+  ExecShellWait open "bin\launch.exe" "uninstall$OUTPOST_DATA" SW_SHOWMINIMIZED
 
   Delete launch.cmd
   Delete Los_Altos.ini
