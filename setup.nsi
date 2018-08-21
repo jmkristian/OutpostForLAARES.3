@@ -119,6 +119,7 @@ Section "Install"
   File /r /x "*~" /x port.txt /x logs bin\*
   SetOutPath "$INSTDIR\pack-it-forms"
   File /r /x "*~" /x .git* pack-it-forms\*
+  File icon-*.png
   SetOutPath "$INSTDIR"
   CopyFiles "$OUTPOST_CODE\Aoclient.exe" "$INSTDIR\bin"
 

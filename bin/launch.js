@@ -31,6 +31,7 @@ const OpdFAIL = path.join('bin', 'OpdFAIL');
 const PackItForms = 'pack-it-forms';
 const PackItMsgs = path.join(PackItForms, 'msgs');
 const PortFileName = path.join('bin', 'server-port.txt');
+const IconStyle = 'width:24pt;height:24pt;vertical-align:middle;';
 
 switch(process.argv[2]) {
 case 'install':
@@ -496,15 +497,24 @@ function onSubmit(formId, buffer, res) {
 }
 
 function submittedMessage(stdout, stderr) {
-    return '<HTML><body>'
-        + 'OK, your message has been submitted to Outpost. You can close this page.'
-        + '<pre>'
-        + encodeHTML((stdout ? stdout.toString(CHARSET) : '') +
-                     (stderr ? stderr.toString(CHARSET) : ''))
-        + '</pre>'
-    // Sadly, this doesn't work on modern browsers:
-        + '<script type="text/javascript">setTimeout(function(){window.open("","_self").close();},5000);</script>'
-        + '</body></HTML>';
+    const output = encodeHTML((stdout ? stdout.toString(ENCODING) : '') +
+                              (stderr ? stderr.toString(ENCODING) : ''));
+    return `<HTML><body>
+  <img src="icon-check.png" alt="OK" style="${IconStyle}">
+    &nbsp;&nbsp;The message has been submitted to Outpost. You can close this page.
+    <pre>
+${output}</pre>
+  <script type="text/javascript">setTimeout(function(){window.open("","_self").close();},5000);</script>
+</body></HTML>`;
+}
+
+function errorToHTML(err) {
+    const message = encodeHTML((err && err.stack) ? err.stack : err);
+    return `<HTML><body>
+  <img src="icon-warning.png" alt="warning" style="${IconStyle}">
+    &nbsp;&nbsp;Something went wrong:<pre>\r\n
+${message}</pre>
+</body></HTML>`;
 }
 
 function writeToFile(fileName) {
@@ -537,12 +547,6 @@ function expandVariables(data, values) {
         data = data.replace(new RegExp(enquoteRegex('{{' + v + '}}'), 'g'), values[v]);
     }
     return data;
-}
-
-function errorToHTML(err) {
-    return '<HTML><body>Something went wrong:<pre>\r\n'
-        + encodeHTML((err && err.stack) ? err.stack : err)
-        + '</pre></body></HTML>';
 }
 
 function encodeHTML(text) {
