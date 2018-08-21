@@ -454,10 +454,7 @@ function onSubmit(formId, buffer, res) {
         const formFileName = openForms[formId].environment.filename;
         const msgFileName = path.resolve(PackItMsgs, 'form-' + formId + '.txt');
         // Convert the message from PACF format to ADDON format:
-        message = message.replace(/([\r\n]*)![^!]+![^\r\n]*[\r\n]*/, '$1');
-        message = message.replace(/[\r\n]*#EOF/, '\r\n!/ADDON!');
-        message = message.replace(/[\r\n]*(#\s*FORMFILENAME:\s*)[^\r\n]*[\r\n]*/,
-                                  '\r\n$1' + formFileName.replace('$', '\\$') + '\r\n');
+        message = message.replace(/[\r\n]+#\s*EOF[^\r\n]*/, '\r\n!/ADDON!');
         fs.writeFile(msgFileName, message, {encoding: ENCODING}, function(err) {
             if (err) {
                 res.send(errorToHTML(err));
