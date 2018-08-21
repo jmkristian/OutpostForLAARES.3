@@ -30,7 +30,7 @@ const NOT_FOUND = 404;
 const OpdFAIL = path.join('bin', 'OpdFAIL');
 const PackItForms = 'pack-it-forms';
 const PackItMsgs = path.join(PackItForms, 'msgs');
-const PortFileName = path.join('bin', 'port.txt');
+const PortFileName = path.join('bin', 'server-port.txt');
 
 switch(process.argv[2]) {
 case 'install':
@@ -172,7 +172,7 @@ function openFormFailed(err, retry, argv) {
         console.error(retry + ' attempts failed ' + JSON.stringify(argv));
         setTimeout(console.log, 5000, 'Goodbye.');
     } else {
-        if (retry == 1 || retry == 3) {
+        if (retry == 0 || retry == 3) {
             startServer(); // in case the old server died or stalled
         }
         retry++;
@@ -257,7 +257,7 @@ function serve() {
     const server = app.listen(0);
     const address = server.address();
     fs.writeFileSync(PortFileName, address.port + '', {encoding: ENCODING}); // advertise my port
-    process.stdout.write = writeToFile(path.resolve('bin', 'logs', 'server_' + address.port + '.log'));
+    process.stdout.write = writeToFile(path.resolve('bin', 'logs', 'server-' + address.port + '.log'));
     console.log('Listening for HTTP requests on port ' + address.port + '...');
     const checkSilent = setInterval(function() {
         // Scan openForms and close any that have been quiet too long.
@@ -278,8 +278,12 @@ function serve() {
             console.log("forms are all closed");
             clearInterval(checkSilent);
             server.close();
-            // Give someone a chance to read the log before the window disappears:
-            setTimeout(process.exit, 2000, 0);
+            fs.readFile(PortFileName, {encoding: ENCODING}, function(err, data) {
+                if (data.trim() == (address.port + '')) {
+                    fs.unlink(PortFileName, function(err) {});
+                }
+                process.exit(0);
+            });
         }
     }, 5000);
 }
@@ -309,7 +313,7 @@ function closeForm(formId) {
     if (form) {
         console.log('form ' + formId + ' closed');
         if (form.environment && form.environment.MSG_FILENAME) {
-            fs.unlinkSync(form.environment.MSG_FILENAME);
+            fs.unlink(form.environment.MSG_FILENAME, function(err) {});
         }
     }
     delete openForms[formId];

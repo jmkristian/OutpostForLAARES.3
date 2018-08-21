@@ -3,7 +3,7 @@
 /bin/*.dll
 /bin/*.exe
 /bin/logs
-/bin/port.txt
+/bin/server-port.txt
 /logs
 /msgs/*.txt
 /node_modules
