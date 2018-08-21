@@ -118,9 +118,7 @@ function uninstall() {
                 if (err) {
                     console.log(err);
                 } else {
-console.log("   data " + data);
                     var newData = data.replace(myInclude1, '').replace(myInclude, "\r\n");
-console.log("newData " + newData);
                     if (newData != data) {
                         fs.writeFile(outpostLaunch, newData, {encoding: ENCODING}, function(err) {
                             if (err) console.log(err);
@@ -233,7 +231,6 @@ function serve() {
     app.use(morgan('tiny'));
     app.use(bodyParser.json({type: JSON_TYPE}));
     app.post('/open', function(req, res, next) {
-console.log('/open ' + JSON.stringify(req.body));
         if (req.body && req.body[0] == 'dry-run') {
             res.end(); // with no body
             // This tells the client not to open a browser page.
