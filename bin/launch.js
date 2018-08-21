@@ -31,6 +31,7 @@ const OpdFAIL = path.join('bin', 'OpdFAIL');
 const PackItForms = 'pack-it-forms';
 const PackItMsgs = path.join(PackItForms, 'msgs');
 const PortFileName = path.join('bin', 'server-port.txt');
+const LogFileAgeLimitMs = 1000 * 60 * 60 * 24; // 24 hours
 const IconStyle = 'width:24pt;height:24pt;vertical-align:middle;';
 
 switch(process.argv[2]) {
@@ -259,6 +260,7 @@ function serve() {
     const server = app.listen(0);
     const address = server.address();
     fs.writeFileSync(PortFileName, address.port + '', {encoding: ENCODING}); // advertise my port
+    deleteOldFiles(path.join('bin', 'logs'), /^server-\d*\.log$/, LogFileAgeLimitMs);
     process.stdout.write = writeToFile(path.resolve('bin', 'logs', 'server-' + address.port + '.log'));
     console.log('Listening for HTTP requests on port ' + address.port + '...');
     const checkSilent = setInterval(function() {
@@ -513,6 +515,24 @@ function errorToHTML(err) {
     &nbsp;&nbsp;Something went wrong:<pre>\r\n
 ${message}</pre>
 </body></HTML>`;
+}
+
+function deleteOldFiles(directoryName, fileNamePattern, ageLimitMs) {
+    const deadline = (new Date).getTime() - ageLimitMs;
+    const fileNames = fs.readdirSync(directoryName, {encoding: ENCODING});
+    for (var f in fileNames) {
+        var fileName = fileNames[f];
+        if (fileNamePattern.test(fileName)) {
+            var fullName = path.join(directoryName, fileName);
+            fs.stat(fullName, function(err, stats) {
+                if (err) {
+                    console.log(err);
+                } else if (stats.isFile() && stats.mtimeMs < deadline) {
+                    fs.unlink(fullName, function(err) {});
+                }
+            });
+        }
+    }
 }
 
 function writeToFile(fileName) {
