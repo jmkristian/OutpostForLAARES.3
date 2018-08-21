@@ -25,6 +25,7 @@ const Transform = require('stream').Transform;
 
 const ENCODING = 'utf-8'; // for reading from files
 const CHARSET = ENCODING; // for HTTP
+const JSON_TYPE = 'application/json';
 const NOT_FOUND = 404;
 const OpdFAIL = path.join('bin', 'OpdFAIL');
 const PackItForms = 'pack-it-forms';
@@ -146,7 +147,7 @@ function openForm(retry, argv) {
                        port: parseInt(fs.readFileSync(PortFileName, ENCODING)),
                        method: 'POST',
                        path: '/open',
-                       headers: {'Content-Type': 'application/json; charset=' + CHARSET}};
+                       headers: {'Content-Type': JSON_TYPE + '; charset=' + CHARSET}};
         var req = http.request(options, function(res) {
             var data = '';
             res.on('data', function(chunk) {
@@ -221,7 +222,7 @@ function serve() {
     const app = express();
     app.set('etag', false); // convenient for troubleshooting
     app.use(morgan('tiny'));
-    app.use(bodyParser.json());
+    app.use(bodyParser.json({type: JSON_TYPE}));
     app.post('/open', function(req, res, next) {
         const formId = '' + nextFormId++;
         onOpen(formId, req.body);
@@ -409,7 +410,7 @@ function expandDataInclude(data, environment, message) {
     return data.replace(target, function(found) {
         var matches = found.match(/"([^"]*)"\s*>([^<]*)/);
         var name = matches[1];
-        var defaults = matches[2].trim();
+        var formDefaults = matches[2].trim();
         // Read a file from pack-it-forms:
         var fileName = path.join(PackItForms, 'resources', 'html', name + '.html')
         var result = fs.readFileSync(fileName, ENCODING);
@@ -422,14 +423,14 @@ function expandDataInclude(data, environment, message) {
                 fs.readFileSync(path.join('bin', 'after-submit-buttons.html'), ENCODING),
                 {message: JSON.stringify(message), queryDefaults: JSON.stringify(environment)});
         }
-        if (defaults) {
-            console.log('default values: ' + defaults);
+        if (formDefaults) {
+            console.log(`default values: ${formDefaults}`);
             result += `<script type="text/javascript">
   var formDefaultValues;
   if (!formDefaultValues) {
       formDefaultValues = [];
   }
-  formDefaultValues.push(${defaults});
+  formDefaultValues.push(${formDefaults});
 </script>
 `;
         }
