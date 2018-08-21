@@ -12,6 +12,50 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 */
+/*
+  This is a Node.js program which serves several purposes:
+  - Edit configuration files during installation
+  - Undo those edits during uninstallation
+  - Receive a message from Outpost
+  - Construct an HTML form representing a message
+  - Show the form to an operator
+  - Submit a message to Outpost
+
+  Any single execution does just one of those things,
+  depending on the value of process.argv[2].
+  For example, "node bin/launch.js install C:/Outpost"
+  edits C:/Outpost/Launch.local and configuration files
+  in the current working directory.
+
+  When an operator clicks a menu item to create a message
+  or opens an existing message that belongs to this add-on,
+  a fairly complex sequence of events ensues.
+  - Outpost executes this program with arguments specified in ../*.ini.
+  - This program POSTs the arguments to a server, and then
+  - launches a browser, which GETs an HTML form from the server.
+  - When the operator clicks "Submit", the browser POSTs a message to the server,
+  - and the server runs bin/Aoclient.exe, which submits the message to Outpost.
+
+  The server is a process running this program with a single argument "serve".
+  The server is started as a side-effect of creating or opening a message.
+  When this program tries and fails to POST arguments to the server,
+  it tries to start the server, delays a bit and retries the POST.
+  The server continues to run as long as any of the forms it serves are open,
+  plus a couple minutes. To implement this, the browser pings the server
+  periodically, and the server notices when the pings stop.
+
+  It's kind of weird to implement all of this behavior in a single program.
+  Splitting it into several programs would have drawbacks:
+  - It would be packaged into several frozen binaries, which would bloat the
+    installer, since each binary contains the enire Node.js runtime code.
+  - Antivirus and firewall software would have to scrutinize multiple programs,
+    which is annoying to the developers who have to persuade Symantec to bless
+    them and operators who have to wait for Avast to scan them.
+
+  To address the issue of operators waiting for antivirus scan, the
+  installation script runs "launch.exe dry-run", which runs this program
+  as though it were handling a message, but doesn't launch a browser.
+*/
 const bodyParser = require('body-parser');
 const child_process = require('child_process');
 const concat_stream = require('concat-stream');
@@ -528,19 +572,22 @@ ${message}</pre>
 
 function deleteOldFiles(directoryName, fileNamePattern, ageLimitMs) {
     const deadline = (new Date).getTime() - ageLimitMs;
-    const fileNames = fs.readdirSync(directoryName, {encoding: ENCODING});
-    for (var f in fileNames) {
-        var fileName = fileNames[f];
-        if (fileNamePattern.test(fileName)) {
-            var fullName = path.join(directoryName, fileName);
-            fs.stat(fullName, function(err, stats) {
-                if (err) {
-                    console.log(err);
-                } else if (stats.isFile() && stats.mtimeMs < deadline) {
-                    fs.unlink(fullName, function(err) {});
-                }
-            });
+    try {
+        const fileNames = fs.readdirSync(directoryName, {encoding: ENCODING});
+        for (var f in fileNames) {
+            var fileName = fileNames[f];
+            if (fileNamePattern.test(fileName)) {
+                var fullName = path.join(directoryName, fileName);
+                fs.stat(fullName, function(err, stats) {
+                    if (err) {
+                        console.log(err);
+                    } else if (stats.isFile() && stats.mtimeMs < deadline) {
+                        fs.unlink(fullName, function(err) {});
+                    }
+                });
+            }
         }
+    } catch(err) {
     }
 }
 
