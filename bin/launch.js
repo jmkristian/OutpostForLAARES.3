@@ -59,18 +59,18 @@ function install() {
     // This method must be idempotent, in part because Avira antivirus
     // might execute it repeatedly while scrutinizing the .exe for viruses.
     var myDirectory = process.cwd();
-    fs.readFile('LOSF.ini', ENCODING, function(err, data) {
+    fs.readFile('Los_Altos.ini', ENCODING, function(err, data) {
         if (err) throw err;
         var newData = expandVariables(data, {INSTDIR: myDirectory});
         if (newData != data) {
-            fs.writeFile('LOSF.ini', newData, {encoding: ENCODING}, function(err) {
+            fs.writeFile('Los_Altos.ini', newData, {encoding: ENCODING}, function(err) {
                 if (err) throw err; // intolerable
             });
         }
     });
     // Each of the arguments names a directory that contains Outpost configuration data.
     // Upsert an INCLUDE into the Launch.local file in each of those directories:
-    var myLaunch = path.resolve(myDirectory, 'LOSF.launch');
+    var myLaunch = path.resolve(myDirectory, 'Los_Altos.launch');
     var target = new RegExp('^INCLUDE\\s+' + enquoteRegex(myLaunch) + '$', 'i');
     for (var a = 3; a < process.argv.length; a++) {
         var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
@@ -106,7 +106,7 @@ function install() {
 }
 
 function uninstall() {
-    var myLaunch = enquoteRegex(path.resolve(process.cwd(), 'LOSF.launch'));
+    var myLaunch = enquoteRegex(path.resolve(process.cwd(), 'Los_Altos.launch'));
     for (a = 3; a < process.argv.length; a++) {
         var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
         if (fs.existsSync(outpostLaunch)) {
@@ -469,7 +469,7 @@ function onSubmit(formId, buffer, res) {
                 console.log('form ' + formId + ' submitting');
                 child_process.execFile(
                     path.join('bin', 'Aoclient.exe'),
-                    ['-a', 'LOSF', '-f', msgFileName, '-s', subject],
+                    ['-a', 'Los_Altos', '-f', msgFileName, '-s', subject],
                     function(err, stdout, stderr) {
                         try {
                             if (err) {

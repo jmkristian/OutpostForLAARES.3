@@ -111,8 +111,8 @@ Section "Install"
 
   # Files to install:
   File launch.cmd
-  File LOSF.ini
-  File LOSF.launch
+  File Los_Altos.ini
+  File Los_Altos.launch
   File README.md
   File /r msgs
   SetOutPath "$INSTDIR\bin"
@@ -154,8 +154,8 @@ Section "Uninstall"
   ExecWait "bin\launch.exe uninstall$OUTPOST_DATA" $0
 
   Delete launch.cmd
-  Delete LOSF.ini
-  Delete LOSF.launch
+  Delete Los_Altos.ini
+  Delete Los_Altos.launch
   Delete README.md
   RMDir /r "$INSTDIR\bin"
   RMDir /r "$INSTDIR\msgs"
