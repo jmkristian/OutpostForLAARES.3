@@ -33,11 +33,6 @@
                                 init_form_from_fields(formDefaultValues[f], 'name');
                             }
                         }
-                        document.querySelector("#message-header").textContent =
-                            '# {{title|split:: |nth:1}}\r\n' +
-                            '# JS-ver. PR-3.9-2.6, 08/11/13,\r\n' +
-                            '# FORMFILENAME: {{query-string:filename}}\r\n' +
-                            '# FORMVERSION: {{version}}\r\n';
                     } catch(err) {
                         // TODO: log the error
                     }
