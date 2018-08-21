@@ -27,6 +27,7 @@ UninstPage instfiles
 
 Var /GLOBAL OUTPOST_CODE
 Var /GLOBAL OUTPOST_DATA
+!define REG_SUBKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\OutpostForLAARES"
 
 Function StrContainsSpace
   Pop $0
@@ -113,31 +114,26 @@ Section "Install"
   File LOSF.ini
   File LOSF.launch
   File README.md
-  File /r bin
   File /r msgs
-  File /r pack-it-forms
+  SetOutPath "$INSTDIR\bin"
+  File /r /x "*~" /x port.txt /x logs bin\*
+  SetOutPath "$INSTDIR\pack-it-forms"
+  File /r /x "*~" /x .git* pack-it-forms\*
+  SetOutPath "$INSTDIR"
   CopyFiles "$OUTPOST_CODE\Aoclient.exe" "$INSTDIR\bin"
 
   # define uninstaller:
   WriteUninstaller "$INSTDIR\uninstall.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OutpostForLAARES" \
-                   "DisplayName" "Outpost for LAARES"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OutpostForLAARES" \
-                   "UninstallString" "$\"$INSTDIR\uninstall.exe$\""
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OutpostForLAARES" \
-                   "Publisher" "Los Altos ARES"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OutpostForLAARES" \
-                   "URLInfoAbout" "https://github.com/jmkristian/Outpost-for-LAARES/blob/master/README.md"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OutpostForLAARES" \
-                   "DisplayVersion" "0.4"
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OutpostForLAARES" \
-                     "VersionMajor" 0
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OutpostForLAARES" \
-                     "VersionMinor" 4
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OutpostForLAARES" \
-                     "NoModify" 1
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OutpostForLAARES" \
-                     "NoRepair" 1
+  WriteRegStr   HKLM "${REG_SUBKEY}" DisplayName "Outpost for LAARES"
+  WriteRegStr   HKLM "${REG_SUBKEY}" UninstallString "$\"$INSTDIR\uninstall.exe$\""
+  WriteRegStr   HKLM "${REG_SUBKEY}" Publisher "Los Altos ARES"
+  WriteRegStr   HKLM "${REG_SUBKEY}" URLInfoAbout "https://github.com/jmkristian/Outpost-for-LAARES/blob/master/README.md"
+  WriteRegStr   HKLM "${REG_SUBKEY}" DisplayVersion "0.4"
+  WriteRegDWORD HKLM "${REG_SUBKEY}" VersionMajor 0
+  WriteRegDWORD HKLM "${REG_SUBKEY}" VersionMinor 4
+  WriteRegDWORD HKLM "${REG_SUBKEY}" NoModify 1
+  WriteRegDWORD HKLM "${REG_SUBKEY}" NoRepair 1
+  WriteRegDWORD HKLM "${REG_SUBKEY}" EstimatedSize 15000
 
   ExecWait "bin\launch.exe install$OUTPOST_DATA" $0
   ${If} $0 != 0
@@ -150,7 +146,7 @@ Section "Uninstall"
 
   # Be sure to delete the uninstaller first.
   Delete "$INSTDIR\uninstall.exe"
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OutpostForLAARES"
+  DeleteRegKey HKLM "${REG_SUBKEY}"
 
   # Remove our line from Outpost configuration files
   Call un.FindOutposts
