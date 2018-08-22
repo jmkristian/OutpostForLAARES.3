@@ -111,7 +111,6 @@ Section "Install"
 
   # Files to install:
   File launch.cmd
-  File *.ini
   File *.launch
   File README.md
   File /r msgs
@@ -167,5 +166,5 @@ Section "Uninstall"
   RMDir /r "$INSTDIR\bin"
   RMDir /r "$INSTDIR\msgs"
   RMDir /r "$INSTDIR\pack-it-forms"
-  RMDir "$INSTDIR" # Do nothing if the directory is empty
+  RMDir "$INSTDIR" # Do nothing if the directory is not empty
 SectionEnd

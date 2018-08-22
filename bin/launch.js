@@ -272,7 +272,7 @@ function startServer(andThen) {
 }
 
 function startBrowserAndExit(port, path) {
-    const command = 'start "Open a Form" /B http://127.0.0.1:' + port + path;
+    const command = 'start "Browse" /B http://127.0.0.1:' + port + path;
     console.log(command);
     child_process.exec(
         command,
@@ -583,7 +583,7 @@ function onSubmit(formId, buffer, res) {
 function submittedMessage(stdout, stderr) {
     const output = encodeHTML((stdout ? stdout.toString(ENCODING) : '') +
                               (stderr ? stderr.toString(ENCODING) : ''));
-    return `<HTML><body>
+    return `<HTML><title>Submitted</title><body>
   <img src="icon-check.png" alt="OK" style="${IconStyle}">
     &nbsp;&nbsp;The message has been submitted to Outpost. You can close this page.
     <pre>
@@ -594,7 +594,7 @@ ${output}</pre>
 
 function errorToHTML(err) {
     const message = encodeHTML((err && err.stack) ? err.stack : err);
-    return `<HTML><body>
+    return `<HTML><title>Warning</title><body>
   <img src="icon-warning.png" alt="warning" style="${IconStyle}">
     &nbsp;&nbsp;Something went wrong:<pre>\r\n
 ${message}</pre>
