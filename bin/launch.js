@@ -34,7 +34,7 @@
   - This program POSTs the arguments to a server, and then
   - launches a browser, which GETs an HTML form from the server.
   - When the operator clicks "Submit", the browser POSTs a message to the server,
-  - and the server runs bin/Aoclient.exe, which submits the message to Outpost.
+  - and the server runs Aoclient.exe, which submits the message to Outpost.
 
   The server is a process running this program with a single argument "serve".
   The server is started as a side-effect of creating or opening a message.
@@ -53,7 +53,7 @@
     them and operators who have to wait for Avast to scan them.
 
   To address the issue of operators waiting for antivirus scan, the
-  installation script runs "launch.exe dry-run", which runs this program
+  installation script runs "launch.exe open dry-run", which runs this program
   as though it were handling a message, but doesn't launch a browser.
 */
 const bodyParser = require('body-parser');
@@ -88,13 +88,8 @@ case 'uninstall':
 case 'serve':
     serve();
     break;
+case 'open':
 case 'dry-run':
-case 'new':
-case 'draft':
-case 'ready':
-case 'sent':
-case 'unread':
-case 'read':
     openMessage();
     break;
 default:
@@ -104,79 +99,107 @@ default:
 function install() {
     // This method must be idempotent, in part because Avira antivirus
     // might execute it repeatedly while scrutinizing the .exe for viruses.
-    const myDirectory = process.cwd();
-    fs.readFile('Los_Altos.ini', ENCODING, function(err, data) {
-        if (err) throw err;
-        var newData = expandVariables(data, {INSTDIR: myDirectory});
-        if (newData != data) {
-            fs.writeFile('Los_Altos.ini', newData, {encoding: ENCODING}, function(err) {
-                if (err) throw err; // intolerable
-            });
+    process.stdout.write = process.stderr.write = writeToFile(path.resolve('bin', 'logs', 'install.log'));
+    try {
+        const myDirectory = process.cwd();
+        const addonNames = getAddonNames(myDirectory);
+        console.log("addons " + JSON.stringify(addonNames));
+        for (var n in addonNames) {
+            var addonName = addonNames[n];
+            expandVariablesInFile({ADDON_NAME: addonName, INSTDIR: myDirectory},
+                                  path.join('bin', 'addon.ini'),
+                                  addonName + '.ini');
+            expandVariablesInFile({ADDON_NAME: addonName},
+                                  path.join('bin', 'Aoclient.ini'),
+                                  path.join(addonName, 'Aoclient.ini'));
         }
-    });
-    // Each of the arguments names a directory that contains Outpost configuration data.
-    // Upsert an INCLUDE into the Launch.local file in each of those directories:
-    const myLaunch = path.resolve(myDirectory, 'Los_Altos.launch');
-    const myInclude = 'INCLUDE ' + myLaunch + '\r\n';
-    const target = new RegExp('^INCLUDE\\s+' + enquoteRegex(myLaunch) + '$', 'i');
-    for (var a = 3; a < process.argv.length; a++) {
-        var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
-        if (!fs.existsSync(outpostLaunch)) {
-            fs.writeFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
-                if (err) console.log(err);  // tolerable
-            }); 
-        } else {
-            fs.readFile(outpostLaunch, ENCODING, function(err, data) {
-                if (err) {
-                    console.log(err); // tolerable
-                } else {
-                    var lines = data.split(/[\r\n]+/);
-                    for (var i in lines) {
-                        if (target.test(lines[i])) {
-                            // The right INCLUDE is already in outpostLaunch.
-                            // Perhaps this installer was executed repeatedly.
-                            return; // don't modify outpostLaunch
-                        }
-                    }
-                    if (data && !(/[\r\n]+$/.test(data))) {
-                        // The outpostLaunch file doesn't end with a newline.
-                        myInclude = '\r\n' + myInclude;
-                    }
-                    fs.appendFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
+        for (var n in addonNames) {
+            var addonName = addonNames[n];
+            // Each of the arguments names a directory that contains Outpost configuration data.
+            // Upsert an INCLUDE into the Launch.local file in each of those directories:
+            var myLaunch = path.resolve(myDirectory, addonName + '.launch');
+            var myInclude = 'INCLUDE ' + myLaunch + '\r\n';
+            var target = new RegExp('^INCLUDE\\s+' + enquoteRegex(myLaunch) + '$', 'i');
+            for (var a = 3; a < process.argv.length; a++) {
+                var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
+                if (!fs.existsSync(outpostLaunch)) {
+                    fs.writeFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
                         if (err) console.log(err);  // tolerable
+                    }); 
+                } else {
+                    fs.readFile(outpostLaunch, ENCODING, function(err, data) {
+                        if (err) {
+                            console.log(err); // tolerable
+                        } else {
+                            var lines = data.split(/[\r\n]+/);
+                            for (var i in lines) {
+                                if (target.test(lines[i])) {
+                                    // The right INCLUDE is already in outpostLaunch.
+                                    // Perhaps this installer was executed repeatedly.
+                                    return; // don't modify outpostLaunch
+                                }
+                            }
+                            if (data && !(/[\r\n]+$/.test(data))) {
+                                // The outpostLaunch file doesn't end with a newline.
+                                myInclude = '\r\n' + myInclude;
+                            }
+                            fs.appendFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
+                                if (err) console.log(err);  // tolerable
+                            });
+                        }
                     });
                 }
-            });
+            }
         }
+    } catch(err) {
+        logAndAbort(err);
     }
 }
 
 function uninstall() {
-    const myLaunch = enquoteRegex(path.resolve(process.cwd(), 'Los_Altos.launch'));
-    const myInclude1 = new RegExp('^INCLUDE\\s+' + myLaunch + '[\r\n]*', 'i');
-    const myInclude = new RegExp('[\r\n]+INCLUDE\\s+' + myLaunch + '[\r\n]+', 'gi');
-    for (a = 3; a < process.argv.length; a++) {
-        var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
-        if (fs.existsSync(outpostLaunch)) {
-           fs.readFile(outpostLaunch, ENCODING, function(err, data) {
-                if (err) {
-                    console.log(err);
-                } else {
-                    var newData = data.replace(myInclude1, '').replace(myInclude, "\r\n");
-                    if (newData != data) {
-                        fs.writeFile(outpostLaunch, newData, {encoding: ENCODING}, function(err) {
-                            if (err) console.log(err);
-                        });
+    const addonNames = getAddonNames();
+    for (var n in addonNames) {
+        var addonName = addonNames[n];
+        var myLaunch = enquoteRegex(path.resolve(process.cwd(), addonName + '.launch'));
+        var myInclude1 = new RegExp('^INCLUDE\\s+' + myLaunch + '[\r\n]*', 'i');
+        var myInclude = new RegExp('[\r\n]+INCLUDE\\s+' + myLaunch + '[\r\n]+', 'gi');
+        for (a = 3; a < process.argv.length; a++) {
+            var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
+            if (fs.existsSync(outpostLaunch)) {
+                fs.readFile(outpostLaunch, ENCODING, function(err, data) {
+                    if (err) {
+                        console.log(err);
+                    } else {
+                        var newData = data.replace(myInclude1, '').replace(myInclude, "\r\n");
+                        if (newData != data) {
+                            fs.writeFile(outpostLaunch, newData, {encoding: ENCODING}, function(err) {
+                                if (err) console.log(err);
+                            });
+                        }
                     }
-                }
-            });
+                });
+            }
         }
     }
 }
 
+/** Return a list of names, such that for each name there exists a <name>.launch file in the given directory. */
+function getAddonNames(directoryName) {
+    var addonNames = [];
+    const fileNames = fs.readdirSync(directoryName, {encoding: ENCODING});
+    for (var f in fileNames) {
+        var fileName = fileNames[f];
+        var found = /^(.*)\.launch$/.exec(fileName);
+        if (found && found[1]) {
+            addonNames.push(found[1]);
+        }
+    }
+    return addonNames;
+}
+
 function openMessage() {
     var args = [];
-    for (var i = 2; i < process.argv.length; i++) {
+    for (var i = 3; i < process.argv.length; i++) {
         args.push(process.argv[i]);
     }
     if (fs.existsSync(PortFileName)) {
@@ -221,7 +244,7 @@ function openFormFailed(err, retry, args) {
     console.log(err);
     if (retry >= 4) {
         console.error(retry + ' attempts failed ' + JSON.stringify(args));
-        setTimeout(console.log, 5000, 'Goodbye.');
+        setTimeout(logAndAbort, 5000, 'Goodbye.');
     } else {
         if (retry == 0 || retry == 3) {
             startServer(); // in case the old server died or stalled
@@ -275,14 +298,14 @@ function serve() {
     app.use(morgan('tiny'));
     app.use(bodyParser.json({type: JSON_TYPE}));
     app.post('/open', function(req, res, next) {
-        if (req.body && req.body[0] == 'dry-run') {
-            res.end(); // with no body
-            // This tells the client not to open a browser page.
-        } else {
+        if (req.body && req.body.length > 0) {
             const formId = '' + nextFormId++;
             onOpen(formId, req.body);
             res.set({'Content-Type': 'text/plain; charset=' + CHARSET});
             res.end(formId, CHARSET);
+        } else {
+            res.end(); // with no body
+            // This tells the client not to open a browser page.
         }
     });
     app.get('/form-:formId', function(req, res, next) {
@@ -314,7 +337,10 @@ function serve() {
     const address = server.address();
     fs.writeFileSync(PortFileName, address.port + '', {encoding: ENCODING}); // advertise my port
     deleteOldFiles(path.join('bin', 'logs'), /^server-\d*\.log$/, LogFileAgeLimitMs);
-    process.stdout.write = writeToFile(path.resolve('bin', 'logs', 'server-' + address.port + '.log'));
+    const logFileName = path.resolve('bin', 'logs', 'server-' + address.port + '.log');
+    console.log('Detailed information about its activity can be seen in');
+    console.log(logFileName);
+    process.stdout.write = writeToFile(logFileName);
     console.log('Listening for HTTP requests on port ' + address.port + '...');
     const checkSilent = setInterval(function() {
         // Scan openForms and close any that have been quiet too long.
@@ -347,8 +373,9 @@ function serve() {
 
 function onOpen(formId, args) {
     var form = {
-        quietSeconds: 0,
         args: args,
+        addonName: args[0],
+        quietSeconds: 0
     };
     form.environment = getEnvironment(form.args);
     form.environment.pingURL = '/ping-' + formId;
@@ -379,8 +406,8 @@ function closeForm(formId) {
 function getEnvironment(args) {
     var environment = {};
     if (args && args.length > 0) {
-        environment.message_status  = args[0];
-        for (var i = 1; i + 1 < args.length; i = i + 2) {
+        environment.message_status = args[1];
+        for (var i = 2; i + 1 < args.length; i = i + 2) {
             environment[args[i]] = args[i+1];
         }
         if (environment.msgno == '-1') { // a sentinel value
@@ -504,9 +531,10 @@ function onSubmit(formId, buffer, res) {
     try {
         const q = querystring.parse(buffer.toString(CHARSET));
         var message = q.formtext;
+        const form = openForms[formId];
         const foundSubject = /[\r\n]#\s*SUBJECT:\s*([^\r\n]*)/.exec(message);
         const subject = foundSubject ? foundSubject[1] : '';
-        const formFileName = openForms[formId].environment.filename;
+        const formFileName = form.environment.filename;
         const msgFileName = path.resolve(PackItMsgs, 'form-' + formId + '.txt');
         // Convert the message from PACF format to ADDON format:
         message = message.replace(/[\r\n]*#EOF/, '\r\n!/ADDON!');
@@ -524,8 +552,8 @@ function onSubmit(formId, buffer, res) {
                 }
                 console.log('form ' + formId + ' submitting');
                 child_process.execFile(
-                    path.join('bin', 'Aoclient.exe'),
-                    ['-a', 'Los_Altos', '-f', msgFileName, '-s', subject],
+                    path.join(form.addonName, 'Aoclient.exe'),
+                    ['-a', form.addonName, '-f', msgFileName, '-s', subject],
                     function(err, stdout, stderr) {
                         try {
                             if (err) {
@@ -614,9 +642,23 @@ function writeToFile(fileName) {
         }
     });
     windowsEOL.pipe(fileStream);
-    console.log('Detailed information about its activity can be seen in');
-    console.log(fileName);
     return windowsEOL.write.bind(windowsEOL);
+}
+
+function expandVariablesInFile(variables, fromFile, intoFile) {
+    if (!intoFile) intoFile = fromFile;
+    if (!fs.existsSync(path.dirname(intoFile))) {
+        fs.mkdirSync(path.dirname(intoFile));
+    }
+    fs.readFile(fromFile, ENCODING, function(err, data) {
+        if (err) logAndAbort(err);
+        var newData = expandVariables(data, variables);
+        if (newData != data) {
+            fs.writeFile(intoFile, newData, {encoding: ENCODING}, function(err) {
+                if (err) logAndAbort(err); // intolerable
+            });
+        }
+    });
 }
 
 function expandVariables(data, values) {
@@ -624,6 +666,11 @@ function expandVariables(data, values) {
         data = data.replace(new RegExp(enquoteRegex('{{' + v + '}}'), 'g'), values[v]);
     }
     return data;
+}
+
+function logAndAbort(err) {
+    console.log(err);
+    process.exit(1);
 }
 
 function encodeHTML(text) {

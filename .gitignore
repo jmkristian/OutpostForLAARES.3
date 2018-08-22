@@ -5,6 +5,8 @@
 /bin/logs
 /bin/server-port.txt
 /logs
+/Los_Altos
+/Los_Altos.ini
 /msgs/*.txt
 /node_modules
 /notes

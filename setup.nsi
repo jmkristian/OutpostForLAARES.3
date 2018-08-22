@@ -111,8 +111,8 @@ Section "Install"
 
   # Files to install:
   File launch.cmd
-  File Los_Altos.ini
-  File Los_Altos.launch
+  File *.ini
+  File *.launch
   File README.md
   File /r msgs
   SetOutPath "$INSTDIR\bin"
@@ -121,7 +121,6 @@ Section "Install"
   File /r /x "*~" /x .git* pack-it-forms\*
   File icon-*.png
   SetOutPath "$INSTDIR"
-  CopyFiles "$OUTPOST_CODE\Aoclient.exe" "$INSTDIR\bin"
 
   # define uninstaller:
   WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -140,6 +139,9 @@ Section "Install"
   ${If} ${Errors}
     Abort "bin\launch.exe install failed"
   ${EndIf}
+
+  CopyFiles "$OUTPOST_CODE\Aoclient.exe" "$INSTDIR\Los_Altos\Aoclient.exe"
+
   # Execute a dry run, to encourage antivirus/firewall software to accept the new code.
   ExecShellWait open "bin\launch.exe" "dry-run" SW_SHOWMINIMIZED
   ${If} ${Errors}
@@ -159,8 +161,8 @@ Section "Uninstall"
   ExecShellWait open "bin\launch.exe" "uninstall$OUTPOST_DATA" SW_SHOWMINIMIZED
 
   Delete launch.cmd
-  Delete Los_Altos.ini
-  Delete Los_Altos.launch
+  Delete *.ini
+  Delete *.launch
   Delete README.md
   RMDir /r "$INSTDIR\bin"
   RMDir /r "$INSTDIR\msgs"
