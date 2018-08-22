@@ -157,7 +157,8 @@ function install() {
 }
 
 function uninstall() {
-    const addonNames = getAddonNames();
+    const addonNames = getAddonNames(process.cwd());
+    console.log("addons " + JSON.stringify(addonNames));
     for (var n in addonNames) {
         var addonName = addonNames[n];
         var myLaunch = enquoteRegex(path.resolve(process.cwd(), addonName + '.launch'));
@@ -172,6 +173,7 @@ function uninstall() {
                     } else {
                         var newData = data.replace(myInclude1, '').replace(myInclude, "\r\n");
                         if (newData != data) {
+                            console.log('remove ' + addonName + ' from ' + outpostLaunch);
                             fs.writeFile(outpostLaunch, newData, {encoding: ENCODING}, function(err) {
                                 if (err) console.log(err);
                             });
