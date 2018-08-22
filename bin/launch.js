@@ -70,6 +70,7 @@ const Transform = require('stream').Transform;
 const ENCODING = 'utf-8'; // for reading from files
 const CHARSET = ENCODING; // for HTTP
 const JSON_TYPE = 'application/json';
+const LOCALHOST = '127.0.0.1';
 const NOT_FOUND = 404;
 const OpdFAIL = path.join('bin', 'OpdFAIL');
 const PackItForms = 'pack-it-forms';
@@ -93,96 +94,120 @@ case 'dry-run':
     openMessage();
     break;
 default:
-    console.log(process.argv[1] + ': unknown verb "' + process.argv[2] + '"');
+    console.error(process.argv[1] + ': unknown verb "' + process.argv[2] + '"');
 }
 
 function install() {
     // This method must be idempotent, in part because Avira antivirus
     // might execute it repeatedly while scrutinizing the .exe for viruses.
-    process.stdout.write = process.stderr.write = writeToFile(path.resolve('bin', 'logs', 'install.log'));
-    try {
-        const myDirectory = process.cwd();
-        const addonNames = getAddonNames(myDirectory);
-        console.log("addons " + JSON.stringify(addonNames));
-        for (var n in addonNames) {
-            var addonName = addonNames[n];
-            expandVariablesInFile({ADDON_NAME: addonName, INSTDIR: myDirectory},
-                                  path.join('bin', 'addon.ini'),
-                                  addonName + '.ini');
-            expandVariablesInFile({ADDON_NAME: addonName},
-                                  path.join('bin', 'Aoclient.ini'),
-                                  path.join(addonName, 'Aoclient.ini'));
+    stopServer(function() {
+        try {
+            process.stdout.write = process.stderr.write = writeToFile(path.resolve('bin', 'logs', 'install.log'));
+            const myDirectory = process.cwd();
+            const addonNames = getAddonNames(myDirectory);
+            console.log('addons ' + JSON.stringify(addonNames));
+            installConfigFiles(myDirectory, addonNames);
+            installIncludes(myDirectory, addonNames);
+        } catch(err) {
+            logAndAbort(err);
         }
-        for (var n in addonNames) {
-            var addonName = addonNames[n];
-            // Each of the arguments names a directory that contains Outpost configuration data.
-            // Upsert an INCLUDE into the Launch.local file in each of those directories:
-            var myLaunch = path.resolve(myDirectory, addonName + '.launch');
-            var myInclude = 'INCLUDE ' + myLaunch + '\r\n';
-            var target = new RegExp('^INCLUDE\\s+' + enquoteRegex(myLaunch) + '$', 'i');
-            for (var a = 3; a < process.argv.length; a++) {
-                var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
-                if (!fs.existsSync(outpostLaunch)) {
-                    fs.writeFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
-                        if (err) console.log(err);  // tolerable
-                    }); 
-                } else {
-                    fs.readFile(outpostLaunch, ENCODING, function(err, data) {
-                        if (err) {
-                            console.log(err); // tolerable
-                        } else {
-                            var lines = data.split(/[\r\n]+/);
-                            for (var i in lines) {
-                                if (target.test(lines[i])) {
-                                    // The right INCLUDE is already in outpostLaunch.
-                                    // Perhaps this installer was executed repeatedly.
-                                    return; // don't modify outpostLaunch
-                                }
-                            }
-                            if (data && !(/[\r\n]+$/.test(data))) {
-                                // The outpostLaunch file doesn't end with a newline.
-                                myInclude = '\r\n' + myInclude;
-                            }
-                            fs.appendFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
-                                if (err) console.log(err);  // tolerable
-                            });
-                        }
-                    });
-                }
-            }
-        }
-    } catch(err) {
-        logAndAbort(err);
+    });
+}
+
+function installConfigFiles(myDirectory, addonNames) {
+    for (var n in addonNames) {
+        var addonName = addonNames[n];
+        expandVariablesInFile({ADDON_NAME: addonName, INSTDIR: myDirectory},
+                              path.join('bin', 'addon.ini'),
+                              addonName + '.ini');
+        expandVariablesInFile({ADDON_NAME: addonName},
+                              path.join('bin', 'Aoclient.ini'),
+                              path.join(addonName, 'Aoclient.ini'));
     }
 }
 
-function uninstall() {
-    const addonNames = getAddonNames(process.cwd());
-    console.log("addons " + JSON.stringify(addonNames));
-    for (var n in addonNames) {
-        var addonName = addonNames[n];
-        var myLaunch = enquoteRegex(path.resolve(process.cwd(), addonName + '.launch'));
-        var myInclude1 = new RegExp('^INCLUDE\\s+' + myLaunch + '[\r\n]*', 'i');
-        var myInclude = new RegExp('[\r\n]+INCLUDE\\s+' + myLaunch + '[\r\n]+', 'gi');
-        for (a = 3; a < process.argv.length; a++) {
-            var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
-            if (fs.existsSync(outpostLaunch)) {
+function installIncludes(myDirectory, addonNames) {
+    // Each of the process arguments names a directory that contains Outpost configuration data.
+    for (var a = 3; a < process.argv.length; a++) {
+        var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
+        // Upsert INCLUDEs into outpostLaunch:
+        for (var n in addonNames) {
+            var addonName = addonNames[n];
+            var myLaunch = path.resolve(myDirectory, addonName + '.launch');
+            var myInclude = 'INCLUDE ' + myLaunch + '\r\n';
+            var target = new RegExp('^INCLUDE\\s+' + enquoteRegex(myLaunch) + '$', 'i');
+            if (!fs.existsSync(outpostLaunch)) {
+                fs.writeFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
+                    if (err) {
+                        console.error(err);  // tolerable
+                    } else {
+                        console.log('added ' + addonName + ' into ' + outpostLaunch);
+                    }
+                }); 
+            } else {
                 fs.readFile(outpostLaunch, ENCODING, function(err, data) {
                     if (err) {
-                        console.log(err);
+                        console.error(err); // tolerable
                     } else {
-                        var newData = data.replace(myInclude1, '').replace(myInclude, "\r\n");
-                        if (newData != data) {
-                            console.log('remove ' + addonName + ' from ' + outpostLaunch);
-                            fs.writeFile(outpostLaunch, newData, {encoding: ENCODING}, function(err) {
-                                if (err) console.log(err);
-                            });
+                        var lines = data.split(/[\r\n]+/);
+                        for (var i in lines) {
+                            if (target.test(lines[i])) {
+                                // The right INCLUDE is already in outpostLaunch.
+                                // Perhaps this installer was executed repeatedly.
+                                return; // don't modify outpostLaunch
+                            }
                         }
+                        if (data && !(/[\r\n]+$/.test(data))) {
+                            // The outpostLaunch file doesn't end with a newline.
+                            myInclude = '\r\n' + myInclude;
+                        }
+                        fs.appendFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
+                            if (err) {
+                                console.error(err);  // tolerable
+                            } else {
+                                console.log('added ' + addonName + ' into ' + outpostLaunch);
+                            }
+                        });
                     }
                 });
             }
         }
     }
+}
+
+function uninstall() {
+    stopServer(function() {
+        const addonNames = getAddonNames(process.cwd());
+        console.log('addons ' + JSON.stringify(addonNames));
+        for (a = 3; a < process.argv.length; a++) {
+            var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
+            if (fs.existsSync(outpostLaunch)) {
+                // Remove INCLUDEs from outpostLaunch:
+                for (var n in addonNames) {
+                    var addonName = addonNames[n];
+                    var myLaunch = enquoteRegex(path.resolve(process.cwd(), addonName + '.launch'));
+                    var myInclude1 = new RegExp('^INCLUDE\\s+' + myLaunch + '[\r\n]*', 'i');
+                    var myInclude = new RegExp('[\r\n]+INCLUDE\\s+' + myLaunch + '[\r\n]+', 'gi');
+                    fs.readFile(outpostLaunch, ENCODING, function(err, data) {
+                        if (err) {
+                            console.error(err);
+                        } else {
+                            var newData = data.replace(myInclude1, '').replace(myInclude, "\r\n");
+                            if (newData != data) {
+                                fs.writeFile(outpostLaunch, newData, {encoding: ENCODING}, function(err) {
+                                    if (err) {
+                                        console.error(err);
+                                    } else {
+                                        console.log('removed ' + addonName + ' from ' + outpostLaunch);
+                                    }
+                                });
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    });
 }
 
 /** Return a list of names, such that for each name there exists a <name>.launch file in the given directory. */
@@ -196,6 +221,9 @@ function getAddonNames(directoryName) {
             addonNames.push(found[1]);
         }
     }
+    addonNames.sort(function (x, y) {
+        return x.toLowerCase().localeCompare(y.toLowerCase());
+    });
     return addonNames;
 }
 
@@ -214,7 +242,7 @@ function openMessage() {
 
 function openForm(retry, args) {
     try {
-        var options = {host: '127.0.0.1',
+        var options = {host: LOCALHOST,
                        port: parseInt(fs.readFileSync(PortFileName, ENCODING)),
                        method: 'POST',
                        path: '/open',
@@ -271,6 +299,28 @@ function startServer(andThen) {
                 andThen();
             }
         });
+}
+
+function stopServer(andThen) {
+    function next(err) {
+        if (andThen) {
+            andThen();
+        }
+    }
+    try {
+        var options = {host: LOCALHOST,
+                       port: parseInt(fs.readFileSync(PortFileName, ENCODING)),
+                       method: 'POST',
+                       path: '/stop'};
+        var req = http.request(options, function(res) {
+            res.on('data', function(chunk) {});
+            res.on('end', next);
+        });
+        req.on('error', next);
+        req.end();
+    } catch(err) {
+        next(err);
+    }
 }
 
 function startBrowserAndExit(port, path) {
@@ -332,6 +382,9 @@ function serve() {
         // which passes the message to set_form_data_div.
         res.statusCode = NOT_FOUND;
         res.end(); // with no body
+    });
+    app.post('/stop', function(req, res, next) {
+        process.exit(0);
     });
     app.get(/^\/.*/, express.static(PackItForms));
 
@@ -655,9 +708,9 @@ function expandVariablesInFile(variables, fromFile, intoFile) {
     fs.readFile(fromFile, ENCODING, function(err, data) {
         if (err) logAndAbort(err);
         var newData = expandVariables(data, variables);
-        if (newData != data) {
+        if (newData != data || intoFile != fromFile) {
             fs.writeFile(intoFile, newData, {encoding: ENCODING}, function(err) {
-                if (err) logAndAbort(err); // intolerable
+                if (err) logAndAbort(err);
             });
         }
     });

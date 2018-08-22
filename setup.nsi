@@ -136,7 +136,7 @@ Section "Install"
 
   ExecShellWait open "bin\launch.exe" "install$OUTPOST_DATA" SW_SHOWMINIMIZED
   ${If} ${Errors}
-    Abort "bin\launch.exe install failed"
+    Abort "bin\launch.exe install$OUTPOST_DATA failed"
   ${EndIf}
 
   CopyFiles "$OUTPOST_CODE\Aoclient.exe" "$INSTDIR\Los_Altos\Aoclient.exe"
@@ -144,7 +144,7 @@ Section "Install"
   # Execute a dry run, to encourage antivirus/firewall software to accept the new code.
   ExecShellWait open "bin\launch.exe" "dry-run" SW_SHOWMINIMIZED
   ${If} ${Errors}
-    Abort "bin\launch.exe install$OUTPOST_DATA failed"
+    Abort "bin\launch.exe dry-run failed"
   ${EndIf}
 SectionEnd
 
