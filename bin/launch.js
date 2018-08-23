@@ -661,8 +661,8 @@ ${output}</pre>
 function errorToHTML(err) {
     const message = encodeHTML((err && err.stack) ? err.stack : err);
     return `<HTML><title>Warning</title><body>
-  <img src="icon-warning.png" alt="warning" style="${IconStyle}">
-    &nbsp;&nbsp;Something went wrong:<pre>\r\n
+  <h3><img src="icon-warning.png" alt="warning" style="${IconStyle}">&nbsp;&nbsp;Something went wrong.</h3>
+  This information may help isolate the problem:<pre>
 ${message}</pre>
 </body></HTML>`;
 }
