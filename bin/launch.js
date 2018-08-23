@@ -30,7 +30,7 @@
   When an operator clicks a menu item to create a message
   or opens an existing message that belongs to this add-on,
   a fairly complex sequence of events ensues.
-  - Outpost executes this program with arguments specified in ../*.ini.
+  - Outpost executes this program with arguments specified in addon.ini.
   - This program POSTs the arguments to a server, and then
   - launches a browser, which GETs an HTML form from the server.
   - When the operator clicks "Submit", the browser POSTs a message to the server,
@@ -102,9 +102,9 @@ function install() {
     // might execute it repeatedly while scrutinizing the .exe for viruses.
     stopServer(function() {
         try {
-            process.stdout.write = process.stderr.write = writeToFile(path.resolve('bin', 'logs', 'install.log'));
+            process.stdout.write = process.stderr.write = writeToFile('install.log');
             const myDirectory = process.cwd();
-            const addonNames = getAddonNames(myDirectory);
+            const addonNames = getAddonNames('addons');
             console.log('addons ' + JSON.stringify(addonNames));
             installConfigFiles(myDirectory, addonNames);
             installIncludes(myDirectory, addonNames);
@@ -119,10 +119,10 @@ function installConfigFiles(myDirectory, addonNames) {
         var addonName = addonNames[n];
         expandVariablesInFile({ADDON_NAME: addonName, INSTDIR: myDirectory},
                               path.join('bin', 'addon.ini'),
-                              addonName + '.ini');
+                              path.join('addons', addonName + '.ini'));
         expandVariablesInFile({ADDON_NAME: addonName},
                               path.join('bin', 'Aoclient.ini'),
-                              path.join(addonName, 'Aoclient.ini'));
+                              path.join('addons', addonName, 'Aoclient.ini'));
     }
 }
 
@@ -133,7 +133,7 @@ function installIncludes(myDirectory, addonNames) {
         // Upsert INCLUDEs into outpostLaunch:
         for (var n in addonNames) {
             var addonName = addonNames[n];
-            var myLaunch = path.resolve(myDirectory, addonName + '.launch');
+            var myLaunch = path.resolve(myDirectory, 'addons', addonName + '.launch');
             var myInclude = 'INCLUDE ' + myLaunch + '\r\n';
             var target = new RegExp('^INCLUDE\\s+' + enquoteRegex(myLaunch) + '$', 'i');
             if (!fs.existsSync(outpostLaunch)) {
@@ -177,7 +177,7 @@ function installIncludes(myDirectory, addonNames) {
 
 function uninstall() {
     stopServer(function() {
-        const addonNames = getAddonNames(process.cwd());
+        const addonNames = getAddonNames('addons');
         console.log('addons ' + JSON.stringify(addonNames));
         for (a = 3; a < process.argv.length; a++) {
             var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
@@ -185,7 +185,7 @@ function uninstall() {
                 // Remove INCLUDEs from outpostLaunch:
                 for (var n in addonNames) {
                     var addonName = addonNames[n];
-                    var myLaunch = enquoteRegex(path.resolve(process.cwd(), addonName + '.launch'));
+                    var myLaunch = enquoteRegex(path.resolve(process.cwd(), 'addons', addonName + '.launch'));
                     var myInclude1 = new RegExp('^INCLUDE\\s+' + myLaunch + '[\r\n]*', 'i');
                     var myInclude = new RegExp('[\r\n]+INCLUDE\\s+' + myLaunch + '[\r\n]+', 'gi');
                     fs.readFile(outpostLaunch, ENCODING, function(err, data) {
@@ -391,8 +391,8 @@ function serve() {
     const server = app.listen(0);
     const address = server.address();
     fs.writeFileSync(PortFileName, address.port + '', {encoding: ENCODING}); // advertise my port
-    deleteOldFiles(path.join('bin', 'logs'), /^server-\d*\.log$/, LogFileAgeLimitMs);
-    const logFileName = path.resolve('bin', 'logs', 'server-' + address.port + '.log');
+    deleteOldFiles('bin', /^server-\d*\.log$/, LogFileAgeLimitMs);
+    const logFileName = path.resolve('bin', 'server-' + address.port + '.log');
     console.log('Detailed information about its activity can be seen in');
     console.log(logFileName);
     process.stdout.write = writeToFile(logFileName);
@@ -607,7 +607,7 @@ function onSubmit(formId, buffer, res) {
                 }
                 console.log('form ' + formId + ' submitting');
                 child_process.execFile(
-                    path.join(form.addonName, 'Aoclient.exe'),
+                    path.join('addons', form.addonName, 'Aoclient.exe'),
                     ['-a', form.addonName, '-f', msgFileName, '-s', subject],
                     function(err, stdout, stderr) {
                         try {

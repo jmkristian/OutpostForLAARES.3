@@ -111,11 +111,11 @@ Section "Install"
 
   # Files to install:
   File launch.cmd
-  File *.launch
   File README.md
-  File /r msgs
+  SetOutPath "$INSTDIR\addons"
+  File addons\*.launch
   SetOutPath "$INSTDIR\bin"
-  File /r /x "*~" /x port.txt /x logs bin\*
+  File /r /x "*~" /x server-port.txt /x *.log bin\*
   SetOutPath "$INSTDIR\pack-it-forms"
   File /r /x "*~" /x .git* pack-it-forms\*
   File icon-*.png
@@ -139,7 +139,7 @@ Section "Install"
     Abort "bin\launch.exe install$OUTPOST_DATA failed"
   ${EndIf}
 
-  CopyFiles "$OUTPOST_CODE\Aoclient.exe" "$INSTDIR\Los_Altos\Aoclient.exe"
+  CopyFiles "$OUTPOST_CODE\Aoclient.exe" "$INSTDIR\addons\Los_Altos\Aoclient.exe"
 
   # Execute a dry run, to encourage antivirus/firewall software to accept the new code.
   ExecShellWait open "bin\launch.exe" "dry-run" SW_SHOWMINIMIZED
@@ -160,11 +160,10 @@ Section "Uninstall"
   ExecShellWait open "bin\launch.exe" "uninstall$OUTPOST_DATA" SW_SHOWMINIMIZED
 
   Delete launch.cmd
-  Delete *.ini
-  Delete *.launch
   Delete README.md
+  Delete *.log
+  RMDir /r "$INSTDIR\addons"
   RMDir /r "$INSTDIR\bin"
-  RMDir /r "$INSTDIR\msgs"
   RMDir /r "$INSTDIR\pack-it-forms"
   RMDir "$INSTDIR" # Do nothing if the directory is not empty
 SectionEnd
