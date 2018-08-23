@@ -68,6 +68,7 @@ const querystring = require('querystring');
 const Transform = require('stream').Transform;
 
 const ENCODING = 'utf-8'; // for reading from files
+const EOL = '\r\n';
 const CHARSET = ENCODING; // for HTTP
 const JSON_TYPE = 'application/json';
 const LOCALHOST = '127.0.0.1';
@@ -126,51 +127,61 @@ function installConfigFiles(myDirectory, addonNames) {
     }
 }
 
+/* Make sure Outpost's Launch.local files include addons/*.launch. */
 function installIncludes(myDirectory, addonNames) {
+    const oldInclude = new RegExp('^INCLUDE\\s+' + enquoteRegex(myDirectory) + '[\\\\/]', 'i');
+    var myIncludes = [];
+    for (var n in addonNames) {
+        myIncludes.push('INCLUDE ' + path.resolve(myDirectory, 'addons', addonNames[n] + '.launch'));
+    }
     // Each of the process arguments names a directory that contains Outpost configuration data.
     for (var a = 3; a < process.argv.length; a++) {
         var outpostLaunch = path.resolve(process.argv[a], 'Launch.local');
-        // Upsert INCLUDEs into outpostLaunch:
-        for (var n in addonNames) {
-            var addonName = addonNames[n];
-            var myLaunch = path.resolve(myDirectory, 'addons', addonName + '.launch');
-            var myInclude = 'INCLUDE ' + myLaunch + '\r\n';
-            var target = new RegExp('^INCLUDE\\s+' + enquoteRegex(myLaunch) + '$', 'i');
-            if (!fs.existsSync(outpostLaunch)) {
-                fs.writeFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
-                    if (err) {
-                        console.error(err);  // tolerable
-                    } else {
-                        console.log('added ' + addonName + ' into ' + outpostLaunch);
+        // Upsert myIncludes into outpostLaunch:
+        if (!fs.existsSync(outpostLaunch)) {
+            fs.writeFile(outpostLaunch, myIncludes.join(EOL) + EOL, {encoding: ENCODING}, function(err) {
+                if (err) {
+                    console.error(err); // tolerable
+                } else {
+                    console.log('included into ' + outpostLaunch);
+                }
+            });
+        } else {
+            fs.readFile(outpostLaunch, ENCODING, function(err, data) {
+                if (err) {
+                    console.error(err); // tolerable
+                } else {
+                    var oldLines = data.split(/[\r\n]+/);
+                    var newLines = [];
+                    var included = false;
+                    for (var i in oldLines) {
+                        var oldLine = oldLines[i];
+                        if (!oldLine) {
+                            // remove this line
+                        } else if (!oldInclude.test(oldLine)) {
+                            newLines.push(oldLine); // no change
+                        } else if (!included) {
+                            newLines = newLines.concat(myIncludes); // replace with myIncludes
+                            included = true;
+                        } // else remove this line
                     }
-                }); 
-            } else {
-                fs.readFile(outpostLaunch, ENCODING, function(err, data) {
-                    if (err) {
-                        console.error(err); // tolerable
+                    if (!included) {
+                        newLines = newLines.concat(myIncludes); // append myIncludes
+                    }
+                    var newData = newLines.join(EOL) + EOL;
+                    if (newData == data) {
+                        console.log('already included into ' + outpostLaunch);
                     } else {
-                        var lines = data.split(/[\r\n]+/);
-                        for (var i in lines) {
-                            if (target.test(lines[i])) {
-                                // The right INCLUDE is already in outpostLaunch.
-                                // Perhaps this installer was executed repeatedly.
-                                return; // don't modify outpostLaunch
-                            }
-                        }
-                        if (data && !(/[\r\n]+$/.test(data))) {
-                            // The outpostLaunch file doesn't end with a newline.
-                            myInclude = '\r\n' + myInclude;
-                        }
-                        fs.appendFile(outpostLaunch, myInclude, {encoding: ENCODING}, function(err) {
+                        fs.writeFile(outpostLaunch, newData, {encoding: ENCODING}, function(err) {
                             if (err) {
-                                console.error(err);  // tolerable
+                                console.error(err); // tolerable
                             } else {
-                                console.log('added ' + addonName + ' into ' + outpostLaunch);
+                                console.log('included into ' + outpostLaunch);
                             }
-                        });
+                        }); 
                     }
-                });
-            }
+                }
+            });
         }
     }
 }
@@ -192,7 +203,7 @@ function uninstall() {
                         if (err) {
                             console.error(err);
                         } else {
-                            var newData = data.replace(myInclude1, '').replace(myInclude, "\r\n");
+                            var newData = data.replace(myInclude1, '').replace(myInclude, EOL);
                             if (newData != data) {
                                 fs.writeFile(outpostLaunch, newData, {encoding: ENCODING}, function(err) {
                                     if (err) {
@@ -413,7 +424,7 @@ function serve() {
             }
         }
         if (!anyOpen) {
-            console.log("forms are all closed");
+            console.log('forms are all closed');
             clearInterval(checkSilent);
             server.close();
             fs.readFile(PortFileName, {encoding: ENCODING}, function(err, data) {
@@ -592,10 +603,10 @@ function onSubmit(formId, buffer, res) {
         const formFileName = form.environment.filename;
         const msgFileName = path.resolve(PackItMsgs, 'form-' + formId + '.txt');
         // Convert the message from PACF format to ADDON format:
-        message = message.replace(/[\r\n]*#EOF/, '\r\n!/ADDON!');
+        message = message.replace(/[\r\n]*#EOF/, EOL + '!/ADDON!');
         // Correct the FORMFILENAME:
         message = message.replace(/[\r\n]*(#\s*FORMFILENAME:\s*)[^\r\n]*[\r\n]*/,
-                                  '\r\n$1' + formFileName.replace('$', '\\$') + '\r\n');
+                                  EOL + '$1' + formFileName.replace('$', '\\$') + EOL);
         fs.writeFile(msgFileName, message, {encoding: ENCODING}, function(err) {
             if (err) {
                 res.send(errorToHTML(err));
@@ -687,10 +698,10 @@ function writeToFile(fileName) {
         transform: function(chunk, encoding, output) {
             if (encoding == 'buffer') {
                 output(null, new Buffer(chunk.toString('binary')
-                                             .replace(/([^\r])\n/g, '$1\r\n'),
+                                             .replace(/([^\r])\n/g, '$1' + EOL),
                                         'binary'));;
             } else if (typeof chunk == 'string') {
-                output(null, chunk.replace(/([^\r])\n/g, '$1\r\n'));
+                output(null, chunk.replace(/([^\r])\n/g, '$1' + EOL));
             } else {
                 output(null, chunk); // no change to an object
             }
