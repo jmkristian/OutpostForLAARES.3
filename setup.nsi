@@ -142,7 +142,7 @@ Section "Install"
   CopyFiles "$OUTPOST_CODE\Aoclient.exe" "$INSTDIR\addons\Los_Altos\Aoclient.exe"
 
   # Execute a dry run, to encourage antivirus/firewall software to accept the new code.
-  ExecShellWait open "bin\launch.exe" "dry-run" SW_SHOWMINIMIZED
+  ExecShell open "bin\launch.exe" "dry-run" SW_SHOWMINIMIZED
   ${If} ${Errors}
     Abort "bin\launch.exe dry-run failed"
   ${EndIf}
